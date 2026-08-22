@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
-import 'widgets/sonic_relay_mark.dart';
+import '../../../core/widgets/sonic_relay_mark.dart';
 
 /// Matches `SonicRelay Splash.dc.html`: two arcs relaying audio between a
 /// PC and a phone around a living waveform, shown while device identity is

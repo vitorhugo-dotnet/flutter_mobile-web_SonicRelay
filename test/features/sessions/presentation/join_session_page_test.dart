@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sonic_relay/app/di/app_providers.dart';
+import 'package:sonic_relay/core/widgets/app_branding_header.dart';
 import 'package:sonic_relay/features/sessions/data/dto/discoverable_session.dart';
 import 'package:sonic_relay/features/sessions/data/dto/public_room_info.dart';
 import 'package:sonic_relay/features/sessions/data/sessions_repository.dart';
@@ -150,6 +151,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // The discovered-session list sits below the fold on the default 800x600
+      // test surface now that the page leads with the branding header.
+      await tester.ensureVisible(find.byType(ListTile));
+      await tester.pumpAndSettle();
       await tester.tap(find.byType(ListTile));
       await tester.pumpAndSettle();
 
@@ -226,6 +231,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Pair device page'), findsOneWidget);
+  });
+
+  testWidgets('leads with the branding header above the join controls', (
+    tester,
+  ) async {
+    // Testers read the screen as unfinished when nothing on it named or
+    // explained the app (SonicRelay#50), so the logo, name and one-line
+    // description come first — but stay above, never inside, the join card.
+    await tester.pumpWidget(_wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppBrandingHeader), findsOneWidget);
+    expect(find.text('SonicRelay'), findsOneWidget);
+    expect(find.text(AppBrandingHeader.description), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byType(AppBrandingHeader)).dy,
+      lessThan(tester.getTopLeft(find.text('Enter session code')).dy),
+    );
   });
 
   testWidgets('the donation card sits below the join controls', (tester) async {
