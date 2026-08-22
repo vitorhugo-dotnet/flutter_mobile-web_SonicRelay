@@ -3,27 +3,51 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../app/theme/app_colors.dart';
 
 /// One bar of the equalizer strip: fixed horizontal position and rest
 /// height; every bar shares the same vertical center (180 in the 360x360
 /// mark viewBox), so only [x] and [height] are needed to place it.
 typedef _BarSpec = ({double x, double height});
 
-/// The animated SonicRelay mark from `SonicRelay Splash.dc.html`: two dim
-/// static arcs, a pair of gradient arcs with endpoint dots that spin slowly,
-/// and a seven-bar equalizer that breathes in a wave — matching the design's
+/// The SonicRelay mark from `SonicRelay Splash.dc.html`: two dim static
+/// arcs, a pair of gradient arcs with endpoint dots that spin slowly, and a
+/// seven-bar equalizer that breathes in a wave — matching the design's
 /// `srSpin` (9s) and `srBar` (1.1s, staggered) keyframes.
-class SonicRelayMark extends StatefulWidget {
-  const SonicRelayMark({this.size = 208, super.key});
+///
+/// Set [animate] to false for a frozen mark. The splash shows it for a
+/// second at most, but a screen the user sits on — the Join session
+/// header — would otherwise keep a ticker and a per-frame repaint alive for
+/// as long as it is open, which a decorative logo does not earn.
+class SonicRelayMark extends StatelessWidget {
+  const SonicRelayMark({this.size = 208, this.animate = true, super.key});
+
+  final double size;
+  final bool animate;
+
+  @override
+  Widget build(BuildContext context) {
+    if (animate) return _AnimatedSonicRelayMark(size: size);
+    // Elapsed 0 is the pose the design starts from: arcs upright, and the
+    // equalizer at its widest spread from short outer bars to a tall center.
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _SonicRelayMarkPainter(elapsedSeconds: 0),
+    );
+  }
+}
+
+class _AnimatedSonicRelayMark extends StatefulWidget {
+  const _AnimatedSonicRelayMark({required this.size});
 
   final double size;
 
   @override
-  State<SonicRelayMark> createState() => _SonicRelayMarkState();
+  State<_AnimatedSonicRelayMark> createState() =>
+      _AnimatedSonicRelayMarkState();
 }
 
-class _SonicRelayMarkState extends State<SonicRelayMark>
+class _AnimatedSonicRelayMarkState extends State<_AnimatedSonicRelayMark>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 

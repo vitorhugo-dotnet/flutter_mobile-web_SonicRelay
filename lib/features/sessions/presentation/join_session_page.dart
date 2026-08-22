@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/di/app_providers.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../core/widgets/app_branding_header.dart';
 import '../../../core/widgets/connection_badge.dart';
 import '../../../core/widgets/sonic_button.dart';
 import '../../../core/widgets/sonic_card.dart';
@@ -59,6 +60,8 @@ class JoinSessionPage extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const AppBrandingHeader(),
+                  const SizedBox(height: AppSpacing.lg),
                   const Align(
                     alignment: Alignment.centerLeft,
                     child: ConnectionBadge(
