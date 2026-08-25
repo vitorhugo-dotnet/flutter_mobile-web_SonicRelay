@@ -605,17 +605,11 @@ final audioReceiverServiceProvider = Provider<AudioReceiverService>(
   (ref) => WebRtcAudioReceiverService(),
 );
 
-/// Microphone capture for `duplex` sessions. Nothing opens the device until the
-/// user turns the microphone on, and a one-way session never touches it.
-final rtcMicrophoneSourceProvider = Provider<RtcMicrophoneSource>(
-  (ref) => const FlutterWebRtcMicrophoneSource(),
-);
 
 final webRtcReceiverServiceProvider = Provider<WebRtcReceiverService>((ref) {
   final service = WebRtcReceiverService(
     peerConnectionFactory: ref.watch(rtcPeerConnectionFactoryProvider),
     audioReceiver: ref.watch(audioReceiverServiceProvider),
-    microphone: ref.watch(rtcMicrophoneSourceProvider),
     iceServers: ref.watch(rtcIceServerConfigProvider),
     iceServersResolver: ref.watch(iceServersRepositoryProvider).resolve,
     // disableFallback needs no explicit handling here: the backend's ICE-servers endpoint

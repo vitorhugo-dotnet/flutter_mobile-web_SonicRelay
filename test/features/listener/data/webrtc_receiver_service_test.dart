@@ -46,23 +46,9 @@ class FakeRtcPeerConnection implements RtcPeerConnection {
   set onConnectionState(void Function(RtcConnectionState state)? callback) =>
       _onConnectionState = callback;
 
-  final List<RtcLocalAudioTrack> attachedAudio = [];
-  int detachCount = 0;
-
   @override
   Future<void> setRemoteDescription(RtcSessionDescription description) async =>
       remoteDescription = description;
-
-  @override
-  Future<void> attachLocalAudio(RtcLocalAudioTrack track) async {
-    if (!attachedAudio.contains(track)) attachedAudio.add(track);
-  }
-
-  @override
-  Future<void> detachLocalAudio() async {
-    detachCount++;
-    attachedAudio.clear();
-  }
 
   @override
   Future<RtcSessionDescription> createAnswer() async =>

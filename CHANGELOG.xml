@@ -1,11 +1,11 @@
 <en-US>
-- Two-way audio 🎙️ In a session the publisher opened for conversation, you can now turn on your microphone and talk back over the same connection.
-- Mute and unmute with one tap, without interrupting the audio you are listening to.
-- The publisher decides who may speak, and SonicRelay ignores audio from anyone who is not allowed to.
+- SonicRelay now takes part in two-way sessions 🔁 When the other device opens one, you hear what it is playing and the app shows what the session is doing.
+- Audio from a participant the session owner has not authorized is now ignored instead of played.
+- Reconnections during a session no longer interrupt the audio you are listening to.
 </en-US>
 
 <pt-BR>
-- Áudio nos dois sentidos 🎙️ Em uma sessão que o transmissor abriu para conversa, agora você pode ligar seu microfone e responder pela mesma conexão.
-- Ative e desative o mudo com um toque, sem interromper o áudio que você está ouvindo.
-- Quem transmite decide quem pode falar, e o SonicRelay ignora o áudio de quem não tem permissão.
+- O SonicRelay agora participa de sessões de mão dupla 🔁 Quando o outro dispositivo abre uma, você ouve o que ele está tocando e o app mostra o que a sessão está fazendo.
+- O áudio de um participante sem autorização do dono da sessão passa a ser ignorado em vez de reproduzido.
+- Renegociações durante a sessão não interrompem mais o áudio que você está ouvindo.
 </pt-BR>

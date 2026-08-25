@@ -14,7 +14,7 @@ lib/
     pairing/         QR/manual pairing, list, revoke
     sessions/        join with a separate session code
     signaling/       DeviceBearer WebSocket + typed envelope
-    listener/        WebRTC audio (receive, plus microphone in duplex), listener UI
+    listener/        receive-only WebRTC, audio, listener UI
     settings/        server, playback, pairing and identity reset
   main.dart
 ```
@@ -66,19 +66,28 @@ Pairing and session join are intentionally distinct:
   reset the delay to its start — a wait chosen while the device had no route at
   all says nothing about a device that now has one.
 - `features/listener/data/WebRtcReceiverService` is signaling-agnostic and owns
-  the peer connection. It answers; it never offers. In a `duplex` session it also
-  owns the microphone: turning it on attaches a local track and asks the
-  publisher for a fresh offer through `webrtc.renegotiate`, which is applied to
-  the existing connection instead of rebuilding it.
+  the receive-only peer connection. It answers; it never offers. An offer the
+  publisher marks `renegotiation: true` is applied to the existing connection
+  instead of rebuilding it, so a peer starting or stopping its audio never costs
+  the stream.
 - `features/listener/presentation/ListenerViewModel` bridges signaling messages,
   outbound answers/candidates, connection state, and coarse statistics.
 
-SDP and ICE candidate bodies are never logged. Flutter never handles video, and
-it only ever captures a microphone in a `duplex` session, after the backend has
-authorized this participant (`audioSendAllowed`) and the user has turned the
-microphone on. The backend's `participant.capabilities` broadcasts are the only
-source of truth for who may publish: the API never parses SDP, so refusing audio
-from an unauthorized peer is this client's responsibility.
+SDP and ICE candidate bodies are never logged. Flutter never handles video and
+never captures anything — not a microphone, and not the phone's own playback.
+
+That last part is the reason a `duplex` session reaches this app as a one-way
+stream. SonicRelay shares system/app audio, and capturing Android's playback
+would need `MediaProjection` + `AudioPlaybackCaptureConfiguration` fed into a
+custom WebRTC audio device module; `flutter_webrtc`'s only audio input is the
+microphone (`JavaAudioDeviceModule`), and its `getDisplayMedia` yields video
+only. So the viewer takes part in a two-way session as a listener, declares
+`canSendAudio: false` so the peer does not wait on it, and says so on screen.
+
+What it does honour is the permission model: the backend's
+`participant.capabilities` broadcasts are the only source of truth for who may
+publish, and since the API never parses SDP, refusing audio from an unauthorized
+peer is this client's responsibility.
 
 ## Related docs
 

@@ -13,7 +13,7 @@ import 'widgets/audio_visualizer.dart';
 import 'widgets/ice_state_panel.dart';
 import 'widgets/latency_card.dart';
 import 'widgets/listen_control_button.dart';
-import 'widgets/talkback_card.dart';
+import 'widgets/two_way_audio_card.dart';
 
 class ListenerPage extends ConsumerWidget {
   const ListenerPage({super.key});
@@ -72,17 +72,9 @@ class ListenerPage extends ConsumerWidget {
                     transport: state.stats.transport,
                     packetLossPercent: state.stats.packetLossPercent,
                   ),
-                  if (state.duplex.canTalk) ...[
+                  if (state.duplex.isTwoWay) ...[
                     const SizedBox(height: AppSpacing.md),
-                    TalkbackCard(
-                      state: state.duplex,
-                      onMicrophoneChanged: (enabled) => ref
-                          .read(listenerViewModelProvider.notifier)
-                          .setMicrophoneEnabled(enabled),
-                      onMutedChanged: (muted) => ref
-                          .read(listenerViewModelProvider.notifier)
-                          .setMuted(muted),
-                    ),
+                    TwoWayAudioCard(state: state.duplex),
                   ],
                   const SizedBox(height: AppSpacing.md),
                   _MetricCard(

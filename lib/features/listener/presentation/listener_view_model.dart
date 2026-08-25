@@ -22,8 +22,8 @@ class ListenerState {
   final ListenerConnectionState connection;
   final ListenerStats stats;
 
-  /// Two-way audio state for the current session. Stays at its defaults (and
-  /// keeps the microphone controls off screen) in a one-way session.
+  /// Two-way audio state for the current session. Stays at its defaults in a
+  /// one-way session.
   final DuplexAudioState duplex;
 
   /// Signaling socket status, or `null` before the socket reports anything.
@@ -84,10 +84,6 @@ class ListenerViewModel extends Notifier<ListenerState> {
     });
     _duplexSubscription = _receiver.duplexState.listen((duplex) {
       state = state.copyWith(duplex: duplex);
-      // The foreground service needs the microphone service type while capture
-      // is running, or Android cuts the microphone off the moment the app is
-      // backgrounded and a two-way call quietly goes one-way.
-      ref.read(streamLifecycleControllerProvider).onDuplexState(duplex);
     });
     _signalingStateSubscription = _signaling.connectionState.listen((
       signaling,
@@ -141,15 +137,6 @@ class ListenerViewModel extends Notifier<ListenerState> {
   /// publisher (invoked from the background notification's "Reconnect" action).
   Future<void> reconnect() => _receiver.reconnect();
 
-  /// Turns this participant's microphone on or off in a `duplex` session. The
-  /// first enable is what triggers the platform permission prompt; a refusal
-  /// comes back as [DuplexAudioState.microphoneUnavailable] rather than an
-  /// exception.
-  Future<void> setMicrophoneEnabled(bool enabled) =>
-      _receiver.setMicrophoneEnabled(enabled);
-
-  /// Mutes or unmutes the microphone without renegotiating the connection.
-  Future<void> setMuted(bool muted) => _receiver.setMuted(muted);
 
   /// Re-checks both layers when the app returns to the foreground: the socket
   /// retries immediately instead of waiting out a backoff scheduled while the

@@ -26,8 +26,6 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan a SonicRelay QR code to pair this device with a publisher.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Talk back to the other participant during a two-way SonicRelay session. The microphone is only used while you turn it on.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

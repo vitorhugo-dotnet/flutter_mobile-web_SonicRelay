@@ -14,21 +14,12 @@ class _StubListenerViewModel extends ListenerViewModel {
   _StubListenerViewModel(this._initial);
 
   final ListenerState _initial;
-  final List<bool> microphoneCalls = [];
-  final List<bool> muteCalls = [];
-
   @override
   ListenerState build() => _initial;
 
   @override
   Future<void> leave() async {}
 
-  @override
-  Future<void> setMicrophoneEnabled(bool enabled) async =>
-      microphoneCalls.add(enabled);
-
-  @override
-  Future<void> setMuted(bool muted) async => muteCalls.add(muted);
 }
 
 Future<void> _pumpWith(WidgetTester tester, ListenerState state) {
@@ -141,22 +132,17 @@ void main() {
     );
   });
 
-  group('two-way audio controls', () {
-    const duplexReady = DuplexAudioState(
-      mode: SessionMode.duplex,
-      sendAllowed: true,
-    );
-
-    testWidgets('stay hidden in a one-way session', (tester) async {
+  group('two-way session', () {
+    testWidgets('says nothing in a one-way session', (tester) async {
       await _pumpWith(
         tester,
         const ListenerState(connection: ListenerConnectionState.connected),
       );
 
-      expect(find.text('Two-way audio'), findsNothing);
+      expect(find.text('Two-way session'), findsNothing);
     });
 
-    testWidgets('stay hidden when the backend has not authorized us', (
+    testWidgets('explains that this device takes part as a listener', (
       tester,
     ) async {
       await _pumpWith(
@@ -167,83 +153,28 @@ void main() {
         ),
       );
 
-      expect(find.text('Two-way audio'), findsNothing);
+      // A user who opened the session for two-way audio would otherwise be left
+      // wondering which half broke.
+      expect(find.text('Two-way session'), findsOneWidget);
+      expect(find.textContaining('as a listener'), findsOneWidget);
     });
 
-    testWidgets('offer the microphone once the session authorizes it', (
-      tester,
-    ) async {
-      final model = _StubListenerViewModel(
-        const ListenerState(
-          connection: ListenerConnectionState.connected,
-          duplex: duplexReady,
-        ),
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [listenerViewModelProvider.overrideWith(() => model)],
-          child: const MaterialApp(home: ListenerPage()),
-        ),
-      );
-
-      expect(find.text('Two-way audio'), findsOneWidget);
-      expect(find.text('Turn on microphone'), findsOneWidget);
-      // Nothing to mute until the microphone is actually on.
-      expect(find.byKey(const Key('talkback-mute-toggle')), findsNothing);
-
-      await tester.ensureVisible(
-        find.byKey(const Key('talkback-microphone-toggle')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('talkback-microphone-toggle')));
-      expect(model.microphoneCalls, [true]);
-    });
-
-    testWidgets('offer mute while the microphone is on', (tester) async {
-      final model = _StubListenerViewModel(
-        const ListenerState(
-          connection: ListenerConnectionState.connected,
-          duplex: DuplexAudioState(
-            mode: SessionMode.duplex,
-            sendAllowed: true,
-            microphoneOn: true,
-          ),
-        ),
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [listenerViewModelProvider.overrideWith(() => model)],
-          child: const MaterialApp(home: ListenerPage()),
-        ),
-      );
-
-      expect(find.text('The other side can hear you.'), findsOneWidget);
-      await tester.ensureVisible(find.byKey(const Key('talkback-mute-toggle')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('talkback-mute-toggle')));
-      expect(model.muteCalls, [true]);
-    });
-
-    testWidgets('explain a refused microphone', (tester) async {
+    testWidgets('reports a peer that paused its audio', (tester) async {
       await _pumpWith(
         tester,
         const ListenerState(
           connection: ListenerConnectionState.connected,
           duplex: DuplexAudioState(
             mode: SessionMode.duplex,
-            sendAllowed: true,
-            microphoneUnavailable: true,
+            remoteMuted: true,
           ),
         ),
       );
 
-      expect(
-        find.textContaining('could not use the microphone'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('paused the audio'), findsOneWidget);
     });
 
-    testWidgets('explain an ignored, unauthorized remote track', (
+    testWidgets('explains an ignored, unauthorized remote track', (
       tester,
     ) async {
       await _pumpWith(
@@ -252,7 +183,6 @@ void main() {
           connection: ListenerConnectionState.connected,
           duplex: DuplexAudioState(
             mode: SessionMode.duplex,
-            sendAllowed: true,
             remoteAudioBlocked: true,
           ),
         ),

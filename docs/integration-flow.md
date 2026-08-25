@@ -53,9 +53,10 @@ deployments use `https://` and `wss://`.
 
 8. **Negotiate WebRTC.** The publisher sends `publisher.ready`; Flutter replies
    `viewer.ready` to that participant. Offer, answer, and ICE candidates then
-   use the typed signaling envelope. In a `duplex` session Flutter also
-   announces `participant.capabilities`, and asks for a new offer with
-   `webrtc.renegotiate` when the user turns the microphone on or off.
+   use the typed signaling envelope. In a `duplex` session Flutter also announces
+   `participant.capabilities` (`canSendAudio: false` — it has nothing to
+   capture) and applies an offer marked `renegotiation: true` to the existing
+   peer connection instead of rebuilding it.
 9. **Play audio.** Flutter receives one remote audio track. The backend routes
    signaling only; media is peer-to-peer or relayed through TURN.
 10. **Leave or revoke.** Explicit leave and `session.ended` tear down signaling,

@@ -26,12 +26,14 @@ class OutboundSignal {
 /// Deliberately signaling-agnostic: inbound protocol messages are pushed in via
 /// [handleSignal], and answers/candidates the receiver produces are emitted on
 /// [outboundSignals] for the view model to forward. It never adds a local
-/// track, never captures a microphone, and only ever consumes remote audio.
+/// track, never captures anything, and only ever consumes remote audio — in a
+/// two-way session as much as in a one-way one, since SonicRelay shares
+/// system/app audio and this viewer has no way to capture the phone's own
+/// playback.
 class WebRtcReceiverService {
   WebRtcReceiverService({
     required RtcPeerConnectionFactory peerConnectionFactory,
     required AudioReceiverService audioReceiver,
-    RtcMicrophoneSource? microphone,
     RtcIceServerConfig? iceServers,
     Future<RtcIceServerConfig> Function()? iceServersResolver,
     bool Function()? forceRelay,
@@ -41,7 +43,6 @@ class WebRtcReceiverService {
     Timer Function(Duration, void Function())? scheduleTimer,
   }) : _peerConnectionFactory = peerConnectionFactory,
        _audioReceiver = audioReceiver,
-       _microphone = microphone,
        _iceServers = iceServers ?? RtcIceServerConfig.defaults(),
        _iceServersResolver = iceServersResolver,
        _forceRelay = forceRelay,
@@ -52,11 +53,6 @@ class WebRtcReceiverService {
 
   final RtcPeerConnectionFactory _peerConnectionFactory;
   final AudioReceiverService _audioReceiver;
-
-  /// Opens the microphone in `duplex` sessions. Null on a build with no capture
-  /// support, which simply means this viewer stays receive-only.
-  final RtcMicrophoneSource? _microphone;
-
   final RtcIceServerConfig _iceServers;
 
   /// Optional resolver used to fetch fresh ICE servers (including short-lived
@@ -106,20 +102,6 @@ class WebRtcReceiverService {
   /// participant id. The only trustworthy source for "may this peer publish
   /// audio" — a peer's own claim carries no weight (backend ADR 0007).
   final Map<String, ParticipantAudioState> _peers = {};
-
-  RtcLocalAudioTrack? _microphoneTrack;
-
-  /// Whether the user asked to transmit. Kept separate from
-  /// [_microphoneTrack]: the intent survives a peer connection being rebuilt,
-  /// and the track does not.
-  bool _microphoneRequested = false;
-  bool _muted = false;
-
-  /// Set while a `webrtc.renegotiate` we sent is still waiting for its offer.
-  /// The offer that answers it must be applied to the *existing* peer
-  /// connection — recreating it would drop the very audio the renegotiation
-  /// exists to preserve.
-  bool _awaitingRenegotiation = false;
 
   DuplexAudioState _duplex = const DuplexAudioState();
 
@@ -217,7 +199,6 @@ class WebRtcReceiverService {
             'WebRTC',
             'webrtc.renegotiate from=${message.from} -> viewer.ready',
           );
-          _awaitingRenegotiation = true;
           _announceReady(message.from!, 'webrtc.renegotiate');
         }
       case SignalingMessageType.error:
@@ -227,16 +208,6 @@ class WebRtcReceiverService {
         // escalating to a socket reopen would be chasing our own tail. Drop the
         // deadline and stay in `reconnecting`: the publisher coming back
         // announces itself, which starts a fresh cycle.
-        if (message.payload['code'] == 'audio_send_not_authorized') {
-          // The server refused the whole `participant.capabilities` message,
-          // so nothing of it was applied and no broadcast is coming to correct
-          // us. Stop transmitting on our own before the peer has to reject a
-          // track it was never supposed to receive.
-          sonicLog('WebRTC', 'audio publishing refused -> releasing microphone');
-          await _stopSending();
-          _emitDuplex(_duplex.copyWith(sendAllowed: false));
-          return;
-        }
         if (message.payload['code'] == 'participant_not_found') {
           sonicLog(
             'WebRTC',
@@ -315,17 +286,14 @@ class WebRtcReceiverService {
     _publisherId = message.from;
     _cancelOfferDeadline();
 
-    // An offer that answers a renegotiation must land on the *existing* peer
-    // connection: rebuilding would drop the audio the renegotiation exists to
-    // keep, and would make adding a microphone mid-call indistinguishable from
-    // a reconnect. Either our own pending request or the publisher marking its
-    // offer identifies one; anything else is still a fresh negotiation, which
-    // keeps the pre-duplex rebuild behavior exactly as it was (a publisher that
-    // rebuilt its own peer connection brings a new DTLS fingerprint, and that
-    // genuinely does need a new connection here).
-    final isRenegotiation =
-        _awaitingRenegotiation || message.payload['renegotiation'] == true;
-    _awaitingRenegotiation = false;
+    // An offer the publisher marked as a renegotiation must land on the
+    // *existing* peer connection: rebuilding would drop the audio the
+    // renegotiation exists to keep, and would make a peer starting or stopping
+    // its audio indistinguishable from a reconnect. Anything else is still a
+    // fresh negotiation, which keeps the pre-duplex rebuild behavior exactly as
+    // it was — a publisher that rebuilt its own peer connection brings a new
+    // DTLS fingerprint, and that genuinely does need a new connection here.
+    final isRenegotiation = message.payload['renegotiation'] == true;
     final existing = _peerConnection;
     if (isRenegotiation && existing != null && _remoteDescriptionSet) {
       await _renegotiate(existing, message);
@@ -356,10 +324,6 @@ class WebRtcReceiverService {
       await connection.setRemoteDescription(offer);
       _remoteDescriptionSet = true;
       await _flushPendingCandidates();
-      // After the remote description, so the microphone attaches to the
-      // transceiver the publisher already offered rather than adding a second
-      // audio m-line this side has no way to negotiate (it can only answer).
-      await _attachMicrophoneIfAny(connection);
 
       final answer = await connection.createAnswer();
       await connection.setLocalDescription(answer);
@@ -387,7 +351,6 @@ class WebRtcReceiverService {
       final offer = RtcSessionDescription.fromSignalingPayload(message.payload);
       await connection.setRemoteDescription(offer);
       await _flushPendingCandidates();
-      await _attachMicrophoneIfAny(connection);
 
       final answer = await connection.createAnswer();
       await connection.setLocalDescription(answer);
@@ -399,7 +362,7 @@ class WebRtcReceiverService {
     } catch (error, stack) {
       // A connection that cannot renegotiate is no worse off being replaced,
       // and the publisher re-offers on `viewer.ready`. Failing this way keeps a
-      // botched microphone toggle from taking the whole session down with it.
+      // botched renegotiation from taking the whole session down with it.
       sonicLog('WebRTC', 'renegotiation failed: $error\n$stack');
       await _disposePeerConnection();
       final publisher = _publisherId;
@@ -409,18 +372,6 @@ class WebRtcReceiverService {
       } else {
         await _teardown(ListenerConnectionState.failed);
       }
-    }
-  }
-
-  Future<void> _attachMicrophoneIfAny(RtcPeerConnection connection) async {
-    final track = _microphoneTrack;
-    if (track == null) return;
-    try {
-      await connection.attachLocalAudio(track);
-    } catch (error) {
-      // Never let the outgoing half break the incoming one: an answer without
-      // the microphone still carries the publisher's audio.
-      sonicLog('WebRTC', 'could not attach microphone: $error');
     }
   }
 
@@ -451,22 +402,7 @@ class WebRtcReceiverService {
 
     final previous = _self;
     _self = parsed;
-    _emitDuplex(
-      _duplex.copyWith(
-        mode: parsed.sessionMode,
-        sendAllowed: parsed.audioSendAllowed,
-      ),
-    );
-
-    if (!parsed.audioSendAllowed &&
-        (_microphoneRequested || _microphoneTrack != null)) {
-      // The publisher revoked this participant's permission mid-session. Stop
-      // on the broadcast rather than waiting for a peer to complain: the API
-      // cannot drop the track for us, so continuing would send audio nobody is
-      // allowed to play.
-      sonicLog('WebRTC', 'audio publishing revoked -> releasing microphone');
-      await _stopSending();
-    }
+    _emitDuplex(_duplex.copyWith(mode: parsed.sessionMode));
 
     // Announce our own capabilities once, right after joining, as the protocol
     // expects. Only in duplex: in a one-way session the defaults the backend
@@ -512,112 +448,16 @@ class WebRtcReceiverService {
     }
   }
 
-  /// Turns this participant's microphone on or off. No-op unless the session is
-  /// duplex *and* the backend authorized this participant to publish.
-  Future<void> setMicrophoneEnabled(bool enabled) async {
-    if (!_duplex.canTalk) return;
-    if (enabled) {
-      if (_microphoneRequested && _microphoneTrack != null) return;
-      _microphoneRequested = true;
-      await _startSending();
-    } else {
-      if (!_microphoneRequested && _microphoneTrack == null) return;
-      await _stopSending();
-    }
-  }
-
-  /// Mutes or unmutes the local microphone. Mute keeps the negotiated m-line
-  /// and transmits silence, so it costs no renegotiation and the remote peer
-  /// learns about it from the backend's broadcast rather than from the gap in
-  /// the audio.
-  Future<void> setMuted(bool muted) async {
-    if (_muted == muted) return;
-    _muted = muted;
-    await _microphoneTrack?.setEnabled(!muted);
-    _emitDuplex(_duplex.copyWith(muted: muted));
-    if (_duplex.mode.allowsSending) {
-      _emit(SignalingMessageType.participantAudioStateChanged, {
-        'muted': muted,
-      });
-    }
-  }
-
-  Future<void> _startSending() async {
-    final source = _microphone;
-    if (source == null) {
-      _microphoneRequested = false;
-      _emitDuplex(
-        _duplex.copyWith(microphoneOn: false, microphoneUnavailable: true),
-      );
-      return;
-    }
-
-    if (_microphoneTrack == null) {
-      final track = await source.open();
-      if (track == null) {
-        // A denied permission is a normal answer, not a failure to recover
-        // from: drop the intent so the UI toggle springs back instead of
-        // sitting in a state the device will not honor.
-        _microphoneRequested = false;
-        _emitDuplex(
-          _duplex.copyWith(microphoneOn: false, microphoneUnavailable: true),
-        );
-        return;
-      }
-      _microphoneTrack = track;
-      await track.setEnabled(!_muted);
-    }
-
-    final connection = _peerConnection;
-    if (connection != null) await _attachMicrophoneIfAny(connection);
-    _declareCapabilities();
-    _emitDuplex(
-      _duplex.copyWith(microphoneOn: true, microphoneUnavailable: false),
-    );
-    // Nothing to renegotiate before the first offer — the track is attached
-    // while that offer is answered.
-    if (connection != null) _requestRenegotiation('adding-microphone-track');
-  }
-
-  Future<void> _stopSending() async {
-    _microphoneRequested = false;
-    final track = _microphoneTrack;
-    _microphoneTrack = null;
-    final connection = _peerConnection;
-    if (connection != null && track != null) {
-      try {
-        await connection.detachLocalAudio();
-      } catch (error) {
-        sonicLog('WebRTC', 'could not detach microphone: $error');
-      }
-    }
-    await track?.dispose();
-    _emitDuplex(_duplex.copyWith(microphoneOn: false));
-    if (track == null) return;
-    _declareCapabilities();
-    if (connection != null) _requestRenegotiation('removing-microphone-track');
-  }
-
-  /// Asks the publisher for a fresh offer on the live connection. The offer it
-  /// sends back is recognized as a renegotiation by [_awaitingRenegotiation].
-  void _requestRenegotiation(String reason) {
-    final publisher = _publisherId;
-    if (publisher == null) return;
-    sonicLog('WebRTC', 'webrtc.renegotiate -> to=$publisher ($reason)');
-    _awaitingRenegotiation = true;
-    _emit(SignalingMessageType.webrtcRenegotiate, {
-      'reason': reason,
-    }, to: publisher);
-  }
-
-  /// Publishes this participant's intent. `canSendAudio` is only ever claimed
-  /// when the backend has already authorized it — the server refuses the whole
-  /// message otherwise, which would leave the declared receive intent unapplied
-  /// too.
+  /// Publishes this participant's intent: it receives and never sends.
+  ///
+  /// `canSendAudio: false` is not a formality — it tells the peer not to wait
+  /// on audio from this device. SonicRelay shares system/app audio, and this
+  /// viewer has no way to capture the phone's own playback, so it never has any
+  /// to send.
   void _declareCapabilities() {
     if (!_duplex.mode.allowsSending) return;
-    _emit(SignalingMessageType.participantCapabilities, {
-      'canSendAudio': _microphoneRequested && (_self?.audioSendAllowed ?? false),
+    _emit(SignalingMessageType.participantCapabilities, const {
+      'canSendAudio': false,
       'canReceiveAudio': true,
     });
   }
@@ -909,7 +749,6 @@ class WebRtcReceiverService {
   Future<void> _teardown(ListenerConnectionState finalState) async {
     _stopStatsPolling();
     _cancelOfferDeadline();
-    await _releaseMicrophone();
     await _disposePeerConnection();
     _pendingRemoteCandidates.clear();
     await _audioReceiver.stop();
@@ -947,7 +786,6 @@ class WebRtcReceiverService {
   Future<void> dispose() async {
     _stopStatsPolling();
     _cancelOfferDeadline();
-    await _releaseMicrophone();
     _self = null;
     _peers.clear();
     await _disposePeerConnection();
@@ -958,20 +796,4 @@ class WebRtcReceiverService {
     await _duplexController.close();
   }
 
-  /// Releases the capture device without announcing anything: used on teardown,
-  /// where either the session is gone or the peer connection that carried the
-  /// track no longer exists.
-  ///
-  /// The participant state itself survives on purpose — a failed negotiation is
-  /// still the same session, and forgetting its mode here would hide the
-  /// microphone controls for the rest of it.
-  Future<void> _releaseMicrophone() async {
-    _microphoneRequested = false;
-    _awaitingRenegotiation = false;
-    final track = _microphoneTrack;
-    _microphoneTrack = null;
-    await track?.dispose();
-    _emitDuplex(_duplex.copyWith(microphoneOn: false, muted: false));
-    _muted = false;
-  }
 }
