@@ -2,9 +2,10 @@
 <html>
 <head>
   <!--
-    Replaced at build time by the `--base-href` argument. GitHub Pages serves
-    this project from `/flutter_mobile-web_SonicRelay/`, not from the domain
-    root, so the workflow always passes one.
+    Replaced at build time by the `--base-href` argument, which the workflow
+    always passes. It is `/` while `web/CNAME` names a custom domain, because
+    Pages then serves the site from that domain's root, and `/<repo>/` on the
+    bare `github.io` URL.
   -->
   <base href="$FLUTTER_BASE_HREF">
 

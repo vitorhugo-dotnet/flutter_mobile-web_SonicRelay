@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'app/di/app_providers.dart';
 import 'app/env/app_config.dart';
 import 'app/sonic_relay_app.dart';
+import 'core/diagnostics/platform_diagnostic_log.dart';
 import 'core/storage/background_playback_storage.dart';
 import 'core/storage/coturn_override_storage.dart';
 import 'core/storage/onboarding_storage.dart';
@@ -29,7 +29,7 @@ Future<void> main() async {
   final savedThemeMode = await const ThemeModeStorage(secureStorage).read();
   final savedOnboardingCompleted =
       await const OnboardingStorage(secureStorage).read();
-  final diagnosticsDirectory = (await getApplicationSupportDirectory()).path;
+  final diagnosticsDirectory = await resolveDiagnosticsDirectory();
 
   runApp(
     ProviderScope(
