@@ -472,7 +472,13 @@ class WebRtcReceiverService {
     // expects. Only in duplex: in a one-way session the defaults the backend
     // already assigned are exactly right, and sending anything would be noise
     // on a path that worked before duplex existed.
-    if (previous == null && parsed.sessionMode.allowsSending) {
+    //
+    // Keyed on the participant id rather than on "have we ever seen one": a
+    // session that ended and was rejoined is a new participant that still needs
+    // its own announcement, while a socket that merely reconnected reuses the id
+    // and keeps the state the backend already stored.
+    if (previous?.participantId != parsed.participantId &&
+        parsed.sessionMode.allowsSending) {
       _declareCapabilities();
     }
   }

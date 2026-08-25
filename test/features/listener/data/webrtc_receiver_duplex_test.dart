@@ -302,6 +302,63 @@ void main() {
       expect(declared.payload['canSendAudio'], isFalse);
     });
 
+    test('rejoining as a new participant announces again', () async {
+      await receiver.handleSignal(
+        _message(
+          SignalingMessageType.sessionJoined,
+          payload: _participant(participantId: _selfId),
+        ),
+      );
+      await pump();
+      outbound.clear();
+
+      // A session that ended and was rejoined is a new participant, whose state the
+      // backend stored against a row that is gone.
+      await receiver.handleSignal(
+        _message(
+          SignalingMessageType.sessionJoined,
+          payload: _participant(participantId: 'self-2'),
+        ),
+      );
+      await pump();
+
+      expect(
+        outbound.where(
+          (signal) =>
+              signal.type == SignalingMessageType.participantCapabilities,
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('a reconnected socket does not re-announce', () async {
+      await receiver.handleSignal(
+        _message(
+          SignalingMessageType.sessionJoined,
+          payload: _participant(participantId: _selfId),
+        ),
+      );
+      await pump();
+      outbound.clear();
+
+      // Same session, same participant id: the backend already holds this state.
+      await receiver.handleSignal(
+        _message(
+          SignalingMessageType.sessionJoined,
+          payload: _participant(participantId: _selfId),
+        ),
+      );
+      await pump();
+
+      expect(
+        outbound.where(
+          (signal) =>
+              signal.type == SignalingMessageType.participantCapabilities,
+        ),
+        isEmpty,
+      );
+    });
+
     test('joining a broadcast session announces nothing', () async {
       await receiver.handleSignal(
         _message(
