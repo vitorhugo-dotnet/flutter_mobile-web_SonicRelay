@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sonic_relay/app/di/app_providers.dart';
 import 'package:sonic_relay/core/diagnostics/diagnostic_log.dart';
+import 'package:sonic_relay/core/diagnostics/file_diagnostic_log.dart';
 import 'package:sonic_relay/core/webrtc/rtc_ice_server_config.dart';
 import 'package:sonic_relay/core/webrtc/rtc_peer_connection_factory.dart';
 import 'package:sonic_relay/core/websocket/websocket_client.dart';
@@ -20,7 +21,7 @@ import 'package:sonic_relay/features/signaling/domain/signaling_message.dart';
 import 'package:sonic_relay/features/signaling/domain/signaling_message_type.dart';
 
 DiagnosticLog _testLog() =>
-    DiagnosticLog(Directory.systemTemp.createTempSync('sonicrelay_test_').path);
+    FileDiagnosticLog(Directory.systemTemp.createTempSync('sonicrelay_test_').path);
 
 class FakeAudioReceiverService implements AudioReceiverService {
   int stopCount = 0;

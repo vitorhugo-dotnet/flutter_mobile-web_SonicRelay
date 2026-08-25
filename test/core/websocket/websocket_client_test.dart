@@ -4,10 +4,12 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sonic_relay/core/diagnostics/diagnostic_log.dart';
+import 'package:sonic_relay/core/diagnostics/file_diagnostic_log.dart';
+import 'package:sonic_relay/core/websocket/io_websocket_connector.dart';
 import 'package:sonic_relay/core/websocket/websocket_client.dart';
 
 DiagnosticLog _testLog() =>
-    DiagnosticLog(Directory.systemTemp.createTempSync('sonicrelay_ws_test_').path);
+    FileDiagnosticLog(Directory.systemTemp.createTempSync('sonicrelay_ws_test_').path);
 
 /// A [math.Random] whose [nextDouble] always returns a fixed value, so
 /// jitter-dependent tests get a deterministic sample instead of a real draw.

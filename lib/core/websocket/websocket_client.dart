@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import '../diagnostics/diagnostic_log.dart';
@@ -53,7 +52,6 @@ typedef WebSocketReconnectPredicate = bool Function(Object error);
 /// an attempt that fails anyway falls back to the normal backoff.
 typedef NetworkAvailabilityProbe = bool Function();
 
-/// Default [WebSocketConnector] backed by `dart:io`'s [WebSocket].
 /// How often an open signaling socket sends a keepalive ping.
 ///
 /// Between negotiations the signaling socket carries no traffic in either
@@ -61,7 +59,7 @@ typedef NetworkAvailabilityProbe = bool Function();
 /// initiates one — so without this it is idle, and intermediaries reap idle
 /// WebSockets. In production that reap was observed at a near-constant ~90s,
 /// killing every viewer session and forcing a full renegotiation each time;
-/// nginx's own default read timeout is 60s. `dart:io` leaves [WebSocket.pingInterval]
+/// nginx's own default read timeout is 60s. `dart:io` leaves `WebSocket.pingInterval`
 /// null by default, which is why the Windows publisher (`KeepAliveInterval = 20s`)
 /// survived on the same network where the Flutter viewer did not. Matching its
 /// 20s keeps a missed ping well inside the shortest window we know of.
@@ -76,36 +74,6 @@ const signalingPingInterval = Duration(seconds: 20);
 /// next retry, and the client is wedged with no timer left to recover it.
 /// Bounding the attempt keeps the reconnect chain alive.
 const signalingConnectTimeout = Duration(seconds: 15);
-
-Future<WebSocketConnection> ioWebSocketConnector(
-  Uri uri,
-  Map<String, String> headers,
-) async {
-  final socket = await WebSocket.connect(
-    uri.toString(),
-    headers: headers,
-  ).timeout(signalingConnectTimeout);
-  socket.pingInterval = signalingPingInterval;
-  return IoWebSocketConnection(socket);
-}
-
-class IoWebSocketConnection implements WebSocketConnection {
-  IoWebSocketConnection(this._socket);
-
-  final WebSocket _socket;
-
-  /// How often this socket sends a keepalive ping, or null when it sends none.
-  Duration? get pingInterval => _socket.pingInterval;
-
-  @override
-  Stream<dynamic> get stream => _socket;
-
-  @override
-  void add(String data) => _socket.add(data);
-
-  @override
-  Future<void> close() => _socket.close();
-}
 
 /// Exponential backoff with a cap, used between reconnect attempts.
 class ReconnectPolicy {

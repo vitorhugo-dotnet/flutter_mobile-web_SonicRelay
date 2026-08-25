@@ -10,6 +10,7 @@ import 'package:sonic_relay/features/device_identity/data/dto/bootstrap_device_r
 import 'package:sonic_relay/features/device_identity/data/dto/bootstrap_device_response.dart';
 import 'package:sonic_relay/features/device_identity/data/dto/device_token_request.dart';
 import 'package:sonic_relay/features/device_identity/data/dto/device_token_response.dart';
+import 'package:sonic_relay/features/device_identity/data/in_memory_device_credential_storage.dart';
 import 'package:sonic_relay/features/device_identity/domain/device_credential.dart';
 
 void main() {
@@ -20,7 +21,7 @@ void main() {
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
-    storage = DeviceCredentialStorage(secureStorage);
+    storage = SecureDeviceCredentialStorage(secureStorage);
     api = _FakeDeviceIdentityApi();
     now = DateTime.utc(2026, 7, 29, 12);
   });
@@ -68,6 +69,33 @@ void main() {
         platform: 'android',
       ),
     );
+  });
+
+  // The browser publisher shares this session but registers as its own device
+  // type, so the backend can scope it and expire it (dotnet_SonicRelay#33).
+  test('bootstraps with the device type it was given', () async {
+    api.tokenResponses.add(
+      _token('token-1', now.add(const Duration(hours: 1))),
+    );
+    final webStorage = InMemoryDeviceCredentialStorage();
+
+    await DeviceIdentitySession(
+      api: api,
+      storage: webStorage,
+      deviceName: 'SonicRelay web publisher',
+      platform: 'web',
+      deviceType: webPublisherDeviceType,
+      now: () => now,
+    ).accessToken();
+
+    expect(api.bootstrapRequests, [
+      const BootstrapDeviceRequest(
+        name: 'SonicRelay web publisher',
+        deviceType: 'web_publisher',
+        platform: 'web',
+      ),
+    ]);
+    expect((await webStorage.read())?.deviceType, 'web_publisher');
   });
 
   test('exchanges a stored credential without bootstrapping', () async {

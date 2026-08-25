@@ -11,7 +11,7 @@ void main() {
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
-    storage = DeviceCredentialStorage(secureStorage);
+    storage = SecureDeviceCredentialStorage(secureStorage);
   });
 
   test('round trips one atomic credential and clears it', () async {
@@ -87,6 +87,38 @@ void main() {
     }
 
     expect(await secureStorage.readAll(), isEmpty);
+  });
+
+  // The browser publisher registers as `platform: web` (dotnet_SonicRelay#33),
+  // so the closed platform list has to admit it — while still rejecting the
+  // desktop values this app never bootstraps as.
+  test('accepts the web platform and still rejects the desktop ones', () async {
+    const webCredential = DeviceCredential(
+      deviceId: 'device-1',
+      credentialSecret: 'secret',
+      credentialVersion: 1,
+      deviceType: 'web_publisher',
+      platform: 'web',
+    );
+
+    await storage.write(webCredential);
+    expect(await storage.read(), webCredential);
+
+    for (final platform in ['windows', 'macos', 'linux', '']) {
+      await expectLater(
+        storage.write(
+          DeviceCredential(
+            deviceId: 'device-1',
+            credentialSecret: 'secret',
+            credentialVersion: 1,
+            deviceType: 'web_publisher',
+            platform: platform,
+          ),
+        ),
+        throwsA(isA<DeviceCredentialStorageException>()),
+        reason: '$platform is not a platform the backend issues identities for',
+      );
+    }
   });
 
   test('reports corrupt stored JSON without exposing its secret', () async {
