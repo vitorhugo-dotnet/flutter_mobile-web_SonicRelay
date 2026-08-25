@@ -274,6 +274,19 @@ jobs:
             --build-name "${{ needs.version.outputs.version_name }}" \
             --build-number "${{ needs.version.outputs.version_code }}"
 
+      # Flutter Web is a single-page app: every route is served by index.html.
+      # GitHub Pages has no rewrite rules, so a request for a path that is not a
+      # real file falls through to 404.html — serving the app from there is what
+      # makes a deep link, a refresh or a shared URL land in the app instead of
+      # GitHub's own 404 page.
+      #
+      # It changes nothing today, because the app uses Flutter's default hash
+      # routing and Pages therefore only ever sees the base path. It is what
+      # makes switching to usePathUrlStrategy() a decision rather than a silent
+      # breakage in production.
+      - name: Serve the app from 404.html for unknown paths
+        run: cp build/web/index.html build/web/404.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
