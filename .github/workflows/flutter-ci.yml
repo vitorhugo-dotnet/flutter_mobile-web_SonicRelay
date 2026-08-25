@@ -301,6 +301,17 @@ jobs:
       group: github-pages
       cancel-in-progress: false
     steps:
+      # On a repository where Pages has never been turned on, the deployment
+      # API answers 404 and the job dies with "Ensure GitHub Pages has been
+      # enabled" — which is what happened on the first run of this job. This
+      # turns Pages on with the Actions build type using the workflow's own
+      # `pages: write` token, so publishing does not depend on someone finding
+      # the right settings page. It is a no-op once Pages is already enabled.
+      - name: Enable GitHub Pages with the Actions build type
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
