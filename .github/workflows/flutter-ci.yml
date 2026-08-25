@@ -261,18 +261,63 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Where Pages serves the site from decides the base href, and getting it
+      # wrong is invisible until production: every asset request resolves under
+      # the wrong prefix, 404s, and leaves a blank page.
+      #
+      # `web/CNAME` is this repository's record of the custom domain configured
+      # in the Pages settings. With one, Pages serves the site at the root of
+      # that domain and redirects the `github.io` URL to it. Without one, it
+      # serves from `https://<owner>.github.io/<repo>/`, so the base href is
+      # derived from the repository name and survives a rename.
+      - name: Resolve the Pages base href
+        id: pages_base
+        shell: bash
+        run: |
+          CUSTOM_DOMAIN=""
+          if [[ -f web/CNAME ]]; then
+            CUSTOM_DOMAIN=$(tr -d '[:space:]' < web/CNAME)
+          fi
+
+          if [[ -n "$CUSTOM_DOMAIN" ]]; then
+            BASE_HREF="/"
+            echo "Building for https://${CUSTOM_DOMAIN}/ (base href '$BASE_HREF')."
+          else
+            BASE_HREF="/${{ github.event.repository.name }}/"
+            echo "Building for https://${{ github.repository_owner }}.github.io${BASE_HREF} (base href '$BASE_HREF')."
+          fi
+
+          echo "base_href=$BASE_HREF" >> "$GITHUB_OUTPUT"
+
       # `--wasm` emits both the WasmGC bundle and a dart2js bundle; `flutter.js`
       # picks between them per browser, so browsers without WasmGC still load.
-      # Pages serves this repository from `/<repo>/`, never the domain root, so
-      # the base href is derived from the repository name and survives a rename.
       - name: Build web
         run: |
           flutter build web \
             --wasm \
             --release \
-            --base-href "/${{ github.event.repository.name }}/" \
+            --base-href "${{ steps.pages_base.outputs.base_href }}" \
             --build-name "${{ needs.version.outputs.version_name }}" \
             --build-number "${{ needs.version.outputs.version_code }}"
+
+      # The base href only exists in the built index.html, so this is the last
+      # point where a wrong one can still be caught by CI instead of by someone
+      # opening the site.
+      - name: Verify the published base href
+        shell: bash
+        run: |
+          EXPECTED='<base href="${{ steps.pages_base.outputs.base_href }}">'
+
+          if ! grep -qF "$EXPECTED" build/web/index.html; then
+            echo "build/web/index.html does not carry $EXPECTED:" >&2
+            grep -n 'base href' build/web/index.html >&2 || true
+            exit 1
+          fi
+
+          if [[ -f web/CNAME ]] && [[ ! -f build/web/CNAME ]]; then
+            echo "web/CNAME did not reach the Pages artifact." >&2
+            exit 1
+          fi
 
       # Flutter Web is a single-page app: every route is served by index.html.
       # GitHub Pages has no rewrite rules, so a request for a path that is not a

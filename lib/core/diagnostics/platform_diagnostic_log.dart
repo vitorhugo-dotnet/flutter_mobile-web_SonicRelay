@@ -8,4 +8,4 @@ library;
 
 export 'io_diagnostic_log_factory.dart'
     if (dart.library.js_interop) 'web_diagnostic_log_factory.dart'
-    show createDiagnosticLog;
+    show createDiagnosticLog, resolveDiagnosticsDirectory;

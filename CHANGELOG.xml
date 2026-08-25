@@ -1,7 +1,7 @@
 <en-US>
-- The home screen now opens with the SonicRelay logo, the app name and a short line explaining what SonicRelay does. 🎧
+- Fixed the browser version: sonicrelay.hugodotnet.dev now opens the app instead of a blank page. 🌐
 </en-US>
 
 <pt-BR>
-- A tela inicial agora começa com o logo do SonicRelay, o nome do app e uma frase curta explicando o que o SonicRelay faz. 🎧
+- Corrigimos a versão para navegador: sonicrelay.hugodotnet.dev agora abre o app em vez de uma tela em branco. 🌐
 </pt-BR>
