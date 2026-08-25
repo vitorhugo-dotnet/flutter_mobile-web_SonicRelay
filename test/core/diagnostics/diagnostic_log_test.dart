@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sonic_relay/core/diagnostics/diagnostic_log.dart';
+import 'package:sonic_relay/core/diagnostics/file_diagnostic_log.dart';
 
 void main() {
   group('DiagnosticLog', () {
@@ -16,7 +16,7 @@ void main() {
     });
 
     test('write appends a redacted JSON line and keeps it in recentEvents', () async {
-      final log = DiagnosticLog(tempDir.path);
+      final log = FileDiagnosticLog(tempDir.path);
 
       await log.write('auth', 'login failed password=hunter2', {'token': 'secret'});
 
@@ -34,14 +34,14 @@ void main() {
       await newFile.writeAsString('{}\n');
       await oldFile.setLastModified(DateTime.now().subtract(const Duration(days: 10)));
 
-      DiagnosticLog(tempDir.path, retention: const Duration(days: 3));
+      FileDiagnosticLog(tempDir.path, retention: const Duration(days: 3));
 
       expect(oldFile.existsSync(), isFalse);
       expect(newFile.existsSync(), isTrue);
     });
 
     test('clear deletes log files and empties recentEvents', () async {
-      final log = DiagnosticLog(tempDir.path);
+      final log = FileDiagnosticLog(tempDir.path);
       await log.write('auth', 'signed in');
       expect(log.recentEvents, isNotEmpty);
       expect(File(log.logPath).existsSync(), isTrue);
@@ -56,7 +56,7 @@ void main() {
       // Regression guard mirroring the Codex-caught race on the paired Windows PR:
       // recentEvents and the disk append must serialize as one unit with clear(),
       // otherwise a queued write can land on disk right after a clear "succeeded".
-      final log = DiagnosticLog(tempDir.path);
+      final log = FileDiagnosticLog(tempDir.path);
       await log.write('auth', 'first');
 
       final blocker = log.write('auth', 'second');
@@ -70,7 +70,7 @@ void main() {
     });
 
     test('export concatenates retained files into one file and returns its path', () async {
-      final log = DiagnosticLog(tempDir.path);
+      final log = FileDiagnosticLog(tempDir.path);
       await log.write('auth', 'first');
       await log.write('auth', 'second');
 
@@ -82,7 +82,7 @@ void main() {
     });
 
     test('recentEvents is capped at 100 entries', () async {
-      final log = DiagnosticLog(tempDir.path);
+      final log = FileDiagnosticLog(tempDir.path);
       for (var i = 0; i < 105; i++) {
         await log.write('auth', 'event-$i');
       }

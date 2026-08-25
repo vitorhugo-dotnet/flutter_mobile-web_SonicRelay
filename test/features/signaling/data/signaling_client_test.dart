@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sonic_relay/core/diagnostics/diagnostic_log.dart';
+import 'package:sonic_relay/core/diagnostics/file_diagnostic_log.dart';
 import 'package:sonic_relay/core/network/network_monitor.dart';
 import 'package:sonic_relay/core/websocket/websocket_client.dart';
 import 'package:sonic_relay/features/device_identity/data/device_credential_storage.dart';
@@ -20,7 +21,7 @@ import 'package:sonic_relay/features/signaling/data/signaling_client.dart';
 import 'package:sonic_relay/features/signaling/domain/signaling_message_type.dart';
 
 DiagnosticLog _testLog() =>
-    DiagnosticLog(Directory.systemTemp.createTempSync('sonicrelay_test_').path);
+    FileDiagnosticLog(Directory.systemTemp.createTempSync('sonicrelay_test_').path);
 
 class FakeWebSocketConnection implements WebSocketConnection {
   final _controller = StreamController<dynamic>.broadcast();
