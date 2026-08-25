@@ -243,6 +243,68 @@ jobs:
             build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
           if-no-files-found: error
 
+  build-web:
+    name: Build web (WebAssembly)
+    needs: [checks, version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # `--wasm` emits both the WasmGC bundle and a dart2js bundle; `flutter.js`
+      # picks between them per browser, so browsers without WasmGC still load.
+      # Pages serves this repository from `/<repo>/`, never the domain root, so
+      # the base href is derived from the repository name and survives a rename.
+      - name: Build web
+        run: |
+          flutter build web \
+            --wasm \
+            --release \
+            --base-href "/${{ github.event.repository.name }}/" \
+            --build-name "${{ needs.version.outputs.version_name }}" \
+            --build-number "${{ needs.version.outputs.version_code }}"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy-pages:
+    name: Deploy web to GitHub Pages
+    # The three gates asked for, plus the build that produces the artifact:
+    # nothing reaches Pages unless the version resolves and analyze and test
+    # both pass.
+    needs: [version, checks, build-web]
+    # Pages has one production site, so only main publishes to it. A pull
+    # request still builds above, which is what catches web breakage early.
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # The workflow-level group is keyed by ref; Pages allows one deployment at
+    # a time across the whole site, so this one is keyed by the site.
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
   release:
     name: Persist version and publish GitHub Release
     needs: [version, checks, build-android]
