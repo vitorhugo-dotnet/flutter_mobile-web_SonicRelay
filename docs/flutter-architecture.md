@@ -14,7 +14,7 @@ lib/
     pairing/         QR/manual pairing, list, revoke
     sessions/        join with a separate session code
     signaling/       DeviceBearer WebSocket + typed envelope
-    listener/        receive-only WebRTC, audio, listener UI
+    listener/        WebRTC audio (receive, plus microphone in duplex), listener UI
     settings/        server, playback, pairing and identity reset
   main.dart
 ```
@@ -66,12 +66,19 @@ Pairing and session join are intentionally distinct:
   reset the delay to its start — a wait chosen while the device had no route at
   all says nothing about a device that now has one.
 - `features/listener/data/WebRtcReceiverService` is signaling-agnostic and owns
-  the receive-only peer connection.
+  the peer connection. It answers; it never offers. In a `duplex` session it also
+  owns the microphone: turning it on attaches a local track and asks the
+  publisher for a fresh offer through `webrtc.renegotiate`, which is applied to
+  the existing connection instead of rebuilding it.
 - `features/listener/presentation/ListenerViewModel` bridges signaling messages,
   outbound answers/candidates, connection state, and coarse statistics.
 
-SDP and ICE candidate bodies are never logged. Flutter never captures a
-microphone, adds a local media track, or handles video.
+SDP and ICE candidate bodies are never logged. Flutter never handles video, and
+it only ever captures a microphone in a `duplex` session, after the backend has
+authorized this participant (`audioSendAllowed`) and the user has turned the
+microphone on. The backend's `participant.capabilities` broadcasts are the only
+source of truth for who may publish: the API never parses SDP, so refusing audio
+from an unauthorized peer is this client's responsibility.
 
 ## Related docs
 

@@ -11,14 +11,19 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <!-- Requested only when the user opens the device-pairing QR scanner. -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Requested only when the user turns on their microphone in a two-way
+         (duplex) session; a one-way listening session never opens the capture
+         device. Declared as optional hardware so devices without a microphone
+         can still install and listen. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>
     <!-- The QR scanner drives the camera through camera_android_camerax, whose
-         own manifest declares RECORD_AUDIO and WRITE_EXTERNAL_STORAGE. The
-         viewer never records audio and never touches shared storage, so they
-         are dropped at merge time rather than shipped and left unused on the
-         store listing. READ_EXTERNAL_STORAGE goes with them: the manifest
-         merger implies it from camerax's WRITE request, so removing only the
-         write permission still leaves a read permission in the APK. -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
+         own manifest also declares WRITE_EXTERNAL_STORAGE. The viewer never
+         touches shared storage, so it is dropped at merge time rather than
+         shipped and left unused on the store listing. READ_EXTERNAL_STORAGE
+         goes with it: the manifest merger implies it from camerax's WRITE
+         request, so removing only the write permission still leaves a read
+         permission in the APK. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
     <!-- Keep the viewer alive while backgrounded during an active stream via a
@@ -27,6 +32,12 @@
          needed for the persistent notification the service must display. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Android 14+ requires the microphone service type (and this permission)
+         for capture to keep running once the app is backgrounded; without it a
+         two-way call goes one-way the moment the user switches apps. The
+         service only ever asks for that type while the microphone is actually
+         on. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Partial wake lock held by the foreground service so audio and the
          reconnect loop keep running with the screen locked (Doze can still
@@ -68,7 +79,7 @@
             android:name=".background.SonicRelayForegroundService"
             android:exported="false"
             android:stopWithTask="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback|microphone" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

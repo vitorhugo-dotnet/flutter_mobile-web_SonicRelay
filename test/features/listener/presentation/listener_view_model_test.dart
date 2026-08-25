@@ -79,6 +79,12 @@ class RecoveryFakePeerConnection implements RtcPeerConnection {
   Future<void> setRemoteDescription(RtcSessionDescription description) async {}
 
   @override
+  Future<void> attachLocalAudio(RtcLocalAudioTrack track) async {}
+
+  @override
+  Future<void> detachLocalAudio() async {}
+
+  @override
   Future<RtcSessionDescription> createAnswer() async =>
       const RtcSessionDescription(sdp: 'answer-sdp', type: 'answer');
 

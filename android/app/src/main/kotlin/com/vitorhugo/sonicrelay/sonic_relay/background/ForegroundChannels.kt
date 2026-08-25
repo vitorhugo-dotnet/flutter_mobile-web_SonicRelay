@@ -44,6 +44,10 @@ object ForegroundChannels {
                             SonicRelayForegroundService.EXTRA_RECONNECT,
                             call.argument<Boolean>("showReconnect") ?: false,
                         )
+                        putExtra(
+                            SonicRelayForegroundService.EXTRA_MICROPHONE,
+                            call.argument<Boolean>("usesMicrophone") ?: false,
+                        )
                     }
                     ContextCompat.startForegroundService(appContext, intent)
                     result.success(null)

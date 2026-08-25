@@ -38,6 +38,13 @@ class SonicRelayForegroundService : Service() {
         val title: String,
         val body: String,
         val showReconnect: Boolean,
+        /**
+         * Whether the viewer is currently capturing audio (a two-way `duplex` session with the
+         * microphone on). Android 14+ only lets a backgrounded app keep the microphone open
+         * through a foreground service that declares the microphone type, so this decides which
+         * types [startForegroundCompat] asks for.
+         */
+        val usesMicrophone: Boolean,
     )
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -49,9 +56,10 @@ class SonicRelayForegroundService : Service() {
                     title = intent.getStringExtra(EXTRA_TITLE) ?: DEFAULT_TITLE,
                     body = intent.getStringExtra(EXTRA_BODY).orEmpty(),
                     showReconnect = intent.getBooleanExtra(EXTRA_RECONNECT, false),
+                    usesMicrophone = intent.getBooleanExtra(EXTRA_MICROPHONE, false),
                 )
                 lastContent = content
-                startForegroundCompat(buildNotification(content))
+                startForegroundCompat(buildNotification(content), content.usesMicrophone)
                 acquireWakeLock()
             }
             ACTION_NOTIF_STOP -> ForegroundBridge.emit("stop")
@@ -105,7 +113,7 @@ class SonicRelayForegroundService : Service() {
     private fun reassertNotification() {
         val content = lastContent ?: return
         Log.i(TAG, "ongoing notification dismissed; re-posting")
-        startForegroundCompat(buildNotification(content))
+        startForegroundCompat(buildNotification(content), content.usesMicrophone)
     }
 
     /**
@@ -133,15 +141,27 @@ class SonicRelayForegroundService : Service() {
         wakeLock = null
     }
 
-    private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-            )
-        } else {
+    private fun startForegroundCompat(notification: Notification, usesMicrophone: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification)
+            return
+        }
+        // The microphone type is added only while capture is actually running: asking for it
+        // unconditionally would make every ordinary listening session require RECORD_AUDIO to
+        // have been granted, and the system rejects the start outright when it has not been.
+        val types = if (usesMicrophone && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        }
+        try {
+            startForeground(NOTIFICATION_ID, notification, types)
+        } catch (error: Exception) {
+            // Losing the microphone type is a degraded two-way call; losing the service is a
+            // dead stream. Fall back to playback-only rather than letting the start throw.
+            Log.w(TAG, "foreground start with types=$types rejected; falling back", error)
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         }
     }
 
@@ -250,6 +270,7 @@ class SonicRelayForegroundService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
         const val EXTRA_RECONNECT = "showReconnect"
+        const val EXTRA_MICROPHONE = "usesMicrophone"
         const val EXTRA_ENDED_NOTICE = "endedNotice"
 
         private const val TAG = "SonicRelayService"

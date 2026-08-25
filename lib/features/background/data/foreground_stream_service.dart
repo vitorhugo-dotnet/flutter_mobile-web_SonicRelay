@@ -16,6 +16,7 @@ class ForegroundStreamNotification {
     required this.title,
     required this.body,
     this.showReconnect = false,
+    this.usesMicrophone = false,
   });
 
   final String title;
@@ -24,10 +25,17 @@ class ForegroundStreamNotification {
   /// Whether to offer a "Reconnect" action (shown while reconnecting).
   final bool showReconnect;
 
+  /// Whether the viewer is capturing audio right now (a two-way session with
+  /// the microphone on). Android 14+ only keeps a backgrounded app's microphone
+  /// open through a service that declares the microphone type, so the platform
+  /// side needs to know — one-way sessions never set it.
+  final bool usesMicrophone;
+
   Map<String, Object?> toMap() => {
     'title': title,
     'body': body,
     'showReconnect': showReconnect,
+    'usesMicrophone': usesMicrophone,
   };
 }
 

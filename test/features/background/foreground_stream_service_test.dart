@@ -103,7 +103,22 @@ void main() {
       'title': 'SonicRelay',
       'body': 'Listening to the stream',
       'showReconnect': false,
+      'usesMicrophone': false,
     });
     expect(invoked.last.arguments['showReconnect'], isTrue);
+  });
+
+  test('start carries the microphone flag while two-way audio is on', () async {
+    await bridge.start(
+      const ForegroundStreamNotification(
+        title: 'SonicRelay',
+        body: 'Two-way audio — your microphone is on',
+        usesMicrophone: true,
+      ),
+    );
+
+    // Android 14+ needs the microphone service type to keep capture alive once
+    // the app is backgrounded; without this the call silently goes one-way.
+    expect(invoked.single.arguments['usesMicrophone'], isTrue);
   });
 }

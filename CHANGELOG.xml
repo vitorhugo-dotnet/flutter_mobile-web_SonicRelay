@@ -1,7 +1,11 @@
 <en-US>
-- The home screen now opens with the SonicRelay logo, the app name and a short line explaining what SonicRelay does. 🎧
+- Two-way audio 🎙️ In a session the publisher opened for conversation, you can now turn on your microphone and talk back over the same connection.
+- Mute and unmute with one tap, without interrupting the audio you are listening to.
+- The publisher decides who may speak, and SonicRelay ignores audio from anyone who is not allowed to.
 </en-US>
 
 <pt-BR>
-- A tela inicial agora começa com o logo do SonicRelay, o nome do app e uma frase curta explicando o que o SonicRelay faz. 🎧
+- Áudio nos dois sentidos 🎙️ Em uma sessão que o transmissor abriu para conversa, agora você pode ligar seu microfone e responder pela mesma conexão.
+- Ative e desative o mudo com um toque, sem interromper o áudio que você está ouvindo.
+- Quem transmite decide quem pode falar, e o SonicRelay ignora o áudio de quem não tem permissão.
 </pt-BR>

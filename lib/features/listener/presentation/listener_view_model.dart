@@ -7,6 +7,7 @@ import '../../sessions/domain/stream_session.dart';
 import '../../signaling/data/signaling_client.dart';
 import '../../signaling/domain/signaling_message.dart';
 import '../data/webrtc_receiver_service.dart';
+import '../domain/duplex_audio_state.dart';
 import '../domain/listener_connection_state.dart';
 import '../domain/listener_stats.dart';
 
@@ -14,11 +15,16 @@ class ListenerState {
   const ListenerState({
     this.connection = ListenerConnectionState.idle,
     this.stats = const ListenerStats.initial(),
+    this.duplex = const DuplexAudioState(),
     this.signaling,
   });
 
   final ListenerConnectionState connection;
   final ListenerStats stats;
+
+  /// Two-way audio state for the current session. Stays at its defaults (and
+  /// keeps the microphone controls off screen) in a one-way session.
+  final DuplexAudioState duplex;
 
   /// Signaling socket status, or `null` before the socket reports anything.
   final SignalingConnectionState? signaling;
@@ -26,11 +32,13 @@ class ListenerState {
   ListenerState copyWith({
     ListenerConnectionState? connection,
     ListenerStats? stats,
+    DuplexAudioState? duplex,
     SignalingConnectionState? signaling,
   }) {
     return ListenerState(
       connection: connection ?? this.connection,
       stats: stats ?? this.stats,
+      duplex: duplex ?? this.duplex,
       signaling: signaling ?? this.signaling,
     );
   }
@@ -49,6 +57,7 @@ class ListenerViewModel extends Notifier<ListenerState> {
   StreamSubscription<OutboundSignal>? _outboundSubscription;
   StreamSubscription<ListenerConnectionState>? _connectionSubscription;
   StreamSubscription<ListenerStats>? _statsSubscription;
+  StreamSubscription<DuplexAudioState>? _duplexSubscription;
   StreamSubscription<SignalingConnectionState>? _signalingStateSubscription;
 
   @override
@@ -72,6 +81,13 @@ class ListenerViewModel extends Notifier<ListenerState> {
     });
     _statsSubscription = _receiver.stats.listen((stats) {
       state = state.copyWith(stats: stats);
+    });
+    _duplexSubscription = _receiver.duplexState.listen((duplex) {
+      state = state.copyWith(duplex: duplex);
+      // The foreground service needs the microphone service type while capture
+      // is running, or Android cuts the microphone off the moment the app is
+      // backgrounded and a two-way call quietly goes one-way.
+      ref.read(streamLifecycleControllerProvider).onDuplexState(duplex);
     });
     _signalingStateSubscription = _signaling.connectionState.listen((
       signaling,
@@ -103,12 +119,14 @@ class ListenerViewModel extends Notifier<ListenerState> {
       _outboundSubscription?.cancel();
       _connectionSubscription?.cancel();
       _statsSubscription?.cancel();
+      _duplexSubscription?.cancel();
       _signalingStateSubscription?.cancel();
     });
 
     return ListenerState(
       connection: _receiver.connectionStateValue,
       stats: _receiver.statsValue,
+      duplex: _receiver.duplexStateValue,
     );
   }
 
@@ -122,6 +140,16 @@ class ListenerViewModel extends Notifier<ListenerState> {
   /// Nudges a stalled connection to recover by re-announcing readiness to the
   /// publisher (invoked from the background notification's "Reconnect" action).
   Future<void> reconnect() => _receiver.reconnect();
+
+  /// Turns this participant's microphone on or off in a `duplex` session. The
+  /// first enable is what triggers the platform permission prompt; a refusal
+  /// comes back as [DuplexAudioState.microphoneUnavailable] rather than an
+  /// exception.
+  Future<void> setMicrophoneEnabled(bool enabled) =>
+      _receiver.setMicrophoneEnabled(enabled);
+
+  /// Mutes or unmutes the microphone without renegotiating the connection.
+  Future<void> setMuted(bool muted) => _receiver.setMuted(muted);
 
   /// Re-checks both layers when the app returns to the foreground: the socket
   /// retries immediately instead of waiting out a backoff scheduled while the

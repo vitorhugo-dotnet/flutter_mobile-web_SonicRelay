@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../core/diagnostics/sonic_log.dart';
+import '../../listener/domain/duplex_audio_state.dart';
 import '../../listener/domain/listener_connection_state.dart';
 import '../data/foreground_stream_service.dart';
 
@@ -60,6 +61,12 @@ class StreamLifecycleController {
   bool _inForeground = true;
   bool _running = false;
 
+  /// Whether the viewer is currently capturing audio. Only ever true in a
+  /// two-way session with the microphone turned on; it decides whether the
+  /// foreground service asks the platform for the microphone type, which is
+  /// what keeps capture alive once the app is backgrounded.
+  bool _usesMicrophone = false;
+
   /// A stream that should keep the process alive while backgrounded.
   static bool _isActive(ListenerConnectionState state) => switch (state) {
     ListenerConnectionState.waitingForOffer ||
@@ -78,6 +85,16 @@ class StreamLifecycleController {
 
   void onConnectionState(ListenerConnectionState state) {
     _state = state;
+    _reconcile();
+  }
+
+  /// Re-asserts the foreground service when two-way audio starts or stops, so
+  /// the microphone service type follows the microphone itself.
+  void onDuplexState(DuplexAudioState duplex) {
+    final usesMicrophone = duplex.microphoneOn;
+    if (usesMicrophone == _usesMicrophone) return;
+    _usesMicrophone = usesMicrophone;
+    sonicLog('Background', 'microphone active=$usesMicrophone');
     _reconcile();
   }
 
@@ -173,6 +190,7 @@ class StreamLifecycleController {
   /// notification or process-survival outlives the session.
   Future<void> forceStop() async {
     _cancelReconnectTimer();
+    _usesMicrophone = false;
     if (!_running) return;
     _running = false;
     await _service.stop();
@@ -200,8 +218,11 @@ class StreamLifecycleController {
     };
     return ForegroundStreamNotification(
       title: 'SonicRelay',
-      body: body,
+      body: _usesMicrophone && state == ListenerConnectionState.connected
+          ? 'Two-way audio — your microphone is on'
+          : body,
       showReconnect: showReconnect,
+      usesMicrophone: _usesMicrophone,
     );
   }
 

@@ -189,10 +189,46 @@ abstract class RtcMediaStream {
   Future<void> setAudioEnabled(bool enabled);
 }
 
+/// A local microphone capture track, used only in `duplex` sessions.
+///
+/// Kept separate from [RtcMediaStream] on purpose: a remote stream is something
+/// the viewer consumes, while this is a capture device the app holds open, and
+/// the two have opposite lifetimes — the microphone must be released the moment
+/// it stops being sent, not when the peer connection happens to go away.
+abstract class RtcLocalAudioTrack {
+  String get id;
+
+  /// Mutes/unmutes at the track level. A disabled track keeps the transceiver
+  /// and the negotiated m-line in place and transmits silence, so mute and
+  /// unmute never require renegotiation.
+  Future<void> setEnabled(bool enabled);
+
+  /// Stops capture and releases the microphone.
+  Future<void> dispose();
+}
+
+/// Opens the microphone for duplex sessions. Abstracted so the duplex logic is
+/// unit-testable without a real capture device, and so the receiver never
+/// depends on `flutter_webrtc` directly.
+abstract class RtcMicrophoneSource {
+  /// Requests microphone access and starts capture. Returns `null` when the
+  /// user denies permission or no capture device is available — a refusal is a
+  /// normal outcome here, not an error to propagate.
+  Future<RtcLocalAudioTrack?> open();
+}
+
 /// The subset of a WebRTC peer connection the receiver needs. Abstracted so
 /// the receiver logic is unit-testable with a plain fake.
 abstract class RtcPeerConnection {
   Future<void> setRemoteDescription(RtcSessionDescription description);
+
+  /// Attaches [track] as this connection's outgoing audio, so the next answer
+  /// negotiates `sendrecv` instead of `recvonly`. Idempotent per track.
+  Future<void> attachLocalAudio(RtcLocalAudioTrack track);
+
+  /// Removes the outgoing audio track previously attached with
+  /// [attachLocalAudio]. No-op when nothing is attached.
+  Future<void> detachLocalAudio();
 
   Future<RtcSessionDescription> createAnswer();
 
@@ -348,6 +384,155 @@ class FlutterWebRtcPeerConnectionFactory implements RtcPeerConnectionFactory {
   }
 }
 
+/// Production [RtcMicrophoneSource] backed by `getUserMedia`.
+///
+/// Opening the microphone also switches the platform audio session from the
+/// media-playback profile to a communication one, and switches it back on
+/// release. That is a deliberate trade against issue #14's fix: `MODE_NORMAL` /
+/// `USAGE_MEDIA` is what keeps one-way listening at full media quality, but it
+/// is also what stops the platform from engaging acoustic echo cancellation, so
+/// a two-way call on a speakerphone feeds the remote peer its own voice back.
+/// The communication profile is therefore applied only while a duplex call
+/// actually holds the microphone, and one-way sessions never see it.
+class FlutterWebRtcMicrophoneSource implements RtcMicrophoneSource {
+  const FlutterWebRtcMicrophoneSource();
+
+  /// Android profile while the microphone is open: `MODE_IN_COMMUNICATION` plus
+  /// voice-communication attributes, which is what lets the platform apply
+  /// hardware echo cancellation and noise suppression to the capture path.
+  static final webrtc.AndroidAudioConfiguration duplexAudioConfiguration =
+      webrtc.AndroidAudioConfiguration(
+        manageAudioFocus: false,
+        androidAudioMode: webrtc.AndroidAudioMode.inCommunication,
+        androidAudioStreamType: webrtc.AndroidAudioStreamType.voiceCall,
+        androidAudioAttributesUsageType:
+            webrtc.AndroidAudioAttributesUsageType.voiceCommunication,
+        androidAudioAttributesContentType:
+            webrtc.AndroidAudioAttributesContentType.speech,
+      );
+
+  @override
+  Future<RtcLocalAudioTrack?> open() async {
+    try {
+      await _applyDuplexAudioProfile();
+      final stream = await webrtc.navigator.mediaDevices.getUserMedia({
+        'audio': {
+          // Software fallbacks for the platforms that do not provide the
+          // hardware equivalents; without them a speakerphone call echoes.
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
+        'video': false,
+      });
+      final tracks = stream.getAudioTracks();
+      if (tracks.isEmpty) {
+        await stream.dispose();
+        await _restorePlaybackAudioProfile();
+        return null;
+      }
+      sonicLog('Audio', 'microphone opened for duplex session');
+      return _FlutterWebRtcLocalAudioTrack(stream, tracks.first);
+    } catch (error) {
+      // A denied permission and a missing capture device both land here, and
+      // neither is an error the caller can act on beyond not sending audio.
+      sonicLog('Audio', 'microphone unavailable: $error');
+      await _restorePlaybackAudioProfile();
+      return null;
+    }
+  }
+
+  static Future<void> _applyDuplexAudioProfile() async {
+    try {
+      if (webrtc.WebRTC.platformIsAndroid) {
+        await webrtc.Helper.setAndroidAudioConfiguration(
+          duplexAudioConfiguration,
+        );
+      }
+      if (webrtc.WebRTC.platformIsIOS) {
+        // playAndRecord + voiceChat is the only combination that opens the
+        // capture path at all on iOS; `playback` (the one-way profile) has no
+        // input route. defaultToSpeaker keeps a hands-free call on the speaker
+        // instead of the earpiece.
+        await webrtc.Helper.setAppleAudioConfiguration(
+          webrtc.AppleAudioConfiguration(
+            appleAudioCategory: webrtc.AppleAudioCategory.playAndRecord,
+            appleAudioCategoryOptions: {
+              webrtc.AppleAudioCategoryOption.mixWithOthers,
+              webrtc.AppleAudioCategoryOption.defaultToSpeaker,
+              webrtc.AppleAudioCategoryOption.allowBluetooth,
+            },
+            appleAudioMode: webrtc.AppleAudioMode.voiceChat,
+          ),
+        );
+      }
+    } catch (error) {
+      sonicLog('Audio', 'failed to apply duplex audio profile: $error');
+    }
+  }
+
+  static Future<void> _restorePlaybackAudioProfile() async {
+    try {
+      if (webrtc.WebRTC.platformIsAndroid) {
+        await webrtc.Helper.setAndroidAudioConfiguration(
+          FlutterWebRtcPeerConnectionFactory
+              .concurrentPlaybackAudioConfiguration,
+        );
+      }
+      if (webrtc.WebRTC.platformIsIOS) {
+        await webrtc.Helper.setAppleAudioConfiguration(
+          webrtc.AppleAudioConfiguration(
+            appleAudioCategory: webrtc.AppleAudioCategory.playback,
+            appleAudioCategoryOptions: {
+              webrtc.AppleAudioCategoryOption.mixWithOthers,
+            },
+            appleAudioMode: webrtc.AppleAudioMode.default_,
+          ),
+        );
+      }
+    } catch (error) {
+      sonicLog('Audio', 'failed to restore playback audio profile: $error');
+    }
+  }
+}
+
+class _FlutterWebRtcLocalAudioTrack implements RtcLocalAudioTrack {
+  _FlutterWebRtcLocalAudioTrack(this.stream, this.track);
+
+  /// Kept so the microphone itself can be released; `addTrack` also needs the
+  /// owning stream so the remote peer sees a stream id rather than a bare track.
+  final webrtc.MediaStream stream;
+  final webrtc.MediaStreamTrack track;
+  bool _disposed = false;
+
+  @override
+  String get id => track.id ?? stream.id;
+
+  @override
+  Future<void> setEnabled(bool enabled) async {
+    if (_disposed) return;
+    track.enabled = enabled;
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    try {
+      await track.stop();
+    } catch (_) {
+      // A track the platform already tore down must not fail teardown.
+    }
+    try {
+      await stream.dispose();
+    } catch (_) {
+      // Same.
+    }
+    sonicLog('Audio', 'microphone released');
+    await FlutterWebRtcMicrophoneSource._restorePlaybackAudioProfile();
+  }
+}
+
 class _FlutterWebRtcMediaStream implements RtcMediaStream {
   _FlutterWebRtcMediaStream(this._stream);
 
@@ -393,6 +578,7 @@ class _FlutterWebRtcPeerConnection implements RtcPeerConnection {
   void Function(RtcMediaStream stream)? _onRemoteStream;
   void Function(RtcConnectionState state)? _onConnectionState;
   String? _lastStreamId;
+  webrtc.RTCRtpSender? _localAudioSender;
 
   void _emitRemoteStream(webrtc.MediaStream stream) {
     if (stream.id == _lastStreamId) return;
@@ -417,6 +603,33 @@ class _FlutterWebRtcPeerConnection implements RtcPeerConnection {
     return _connection.setRemoteDescription(
       webrtc.RTCSessionDescription(description.sdp, description.type),
     );
+  }
+
+  @override
+  Future<void> attachLocalAudio(RtcLocalAudioTrack track) async {
+    if (track is! _FlutterWebRtcLocalAudioTrack) {
+      throw ArgumentError.value(
+        track,
+        'track',
+        'Only tracks produced by FlutterWebRtcMicrophoneSource can be attached '
+            'to a flutter_webrtc peer connection.',
+      );
+    }
+    if (_localAudioSender != null) return;
+    _localAudioSender = await _connection.addTrack(track.track, track.stream);
+  }
+
+  @override
+  Future<void> detachLocalAudio() async {
+    final sender = _localAudioSender;
+    _localAudioSender = null;
+    if (sender == null) return;
+    try {
+      await _connection.removeTrack(sender);
+    } catch (_) {
+      // Removing a sender from a connection that is already closing is not a
+      // failure the caller can do anything about.
+    }
   }
 
   @override
