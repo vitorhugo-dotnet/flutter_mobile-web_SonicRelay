@@ -90,6 +90,10 @@ class ZxingPairingScannerController implements PairingScannerController {
 
         return ReaderWidget(
           codeFormat: Format.qrCode,
+          tryHarder: true,
+          tryRotate: true,
+          tryDownscale: true,
+          cropPercent: 0.8,
           showGallery: false,
           showToggleCamera: false,
           onScan: (code) {
