@@ -7,6 +7,12 @@ import 'device_identity_api.dart';
 import 'dto/bootstrap_device_request.dart';
 import 'dto/device_token_request.dart';
 
+/// The `deviceType` the Flutter viewer registers as.
+const defaultViewerDeviceType = 'flutter_viewer';
+
+/// The `deviceType` the browser publisher registers as (dotnet_SonicRelay#33).
+const webPublisherDeviceType = 'web_publisher';
+
 class DeviceIdentitySessionInvalidatedException implements Exception {
   const DeviceIdentitySessionInvalidatedException();
 
@@ -21,23 +27,30 @@ class DeviceIdentitySession {
     required DeviceCredentialStorage storage,
     required String deviceName,
     required String platform,
+    String deviceType = defaultViewerDeviceType,
     Future<String?> Function()? deviceNameResolver,
     DateTime Function()? now,
     void Function()? onInvalidated,
   }) : _api = api,
        _storage = storage,
        _deviceName = deviceName,
+       _deviceType = deviceType,
        _deviceNameResolver = deviceNameResolver,
        _platform = platform,
        _now = now ?? DateTime.now,
        _onInvalidated = onInvalidated;
 
-  static const _deviceType = 'flutter_viewer';
   static const _expiryMargin = Duration(seconds: 30);
 
   final DeviceIdentityApi _api;
   final DeviceCredentialStorage _storage;
   final String _deviceName;
+
+  /// What this client registers as at bootstrap. The Flutter viewer is the
+  /// default; the browser publisher registers as `web_publisher` so the backend
+  /// can scope it and expire it as an ephemeral identity
+  /// (dotnet_SonicRelay#33).
+  final String _deviceType;
 
   /// Optional async lookup of the real device/model name (e.g. "Pixel 8"),
   /// used at bootstrap so the publisher's paired-viewers list shows something

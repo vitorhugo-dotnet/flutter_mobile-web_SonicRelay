@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sonic_relay/core/diagnostics/diagnostic_log.dart';
+import 'package:sonic_relay/core/diagnostics/file_diagnostic_log.dart';
 import 'package:sonic_relay/core/diagnostics/recovery_journal.dart';
 
 void main() {
@@ -10,7 +11,7 @@ void main() {
 
   setUp(() {
     directory = Directory.systemTemp.createTempSync('sonicrelay_journal_test_');
-    log = DiagnosticLog(directory.path);
+    log = FileDiagnosticLog(directory.path);
   });
 
   tearDown(() {

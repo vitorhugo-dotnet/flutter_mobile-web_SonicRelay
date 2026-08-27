@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -11,11 +12,14 @@ const _publicName = 'SonicRelay';
 const _brandedFiles = [
   'android/app/src/main/AndroidManifest.xml',
   'ios/Runner/Info.plist',
+  'web/index.html',
+  'web/manifest.json',
 ];
 
-/// The app ships to Android and iOS only; the web and desktop runners were
-/// removed rather than left unmaintained (SonicRelay#37).
-const _retiredPlatformDirs = ['web', 'linux', 'macos', 'windows'];
+/// The desktop runners were removed rather than left unmaintained
+/// (SonicRelay#37). Web came back deliberately: it is published to GitHub Pages
+/// and is the host for the browser publisher (dotnet_SonicRelay#33).
+const _retiredPlatformDirs = ['linux', 'macos', 'windows'];
 
 String _read(String path) => File(path).readAsStringSync();
 
@@ -41,6 +45,25 @@ void main() {
       expect(_plistValue(plist, 'CFBundleName'), _publicName);
     });
 
+    test('web tab title and installed app name', () {
+      final index = _read('web/index.html');
+      expect(
+        RegExp(r'<title>([^<]*)</title>').firstMatch(index)?.group(1),
+        _publicName,
+      );
+      expect(
+        RegExp(r'name="apple-mobile-web-app-title" content="([^"]*)"')
+            .firstMatch(index)
+            ?.group(1),
+        _publicName,
+      );
+
+      final manifest =
+          jsonDecode(_read('web/manifest.json')) as Map<String, dynamic>;
+      expect(manifest['name'], _publicName);
+      expect(manifest['short_name'], _publicName);
+    });
+
     test('in-app title', () {
       expect(_read('lib/app/sonic_relay_app.dart'), contains("title: '$_publicName'"));
     });
@@ -59,14 +82,14 @@ void main() {
   });
 
   group('platform scope', () {
-    test('only the Android and iOS runners are checked in', () {
+    test('only the retired desktop runners stay out of the tree', () {
       for (final dir in _retiredPlatformDirs) {
         expect(
           Directory(dir).existsSync(),
           isFalse,
           reason:
-              '$dir/ is back in the tree. The app targets Android and iOS only, '
-              'and the QR scanner (flutter_zxing) has no web implementation.',
+              '\$dir/ is back in the tree. The app targets Android, iOS and '
+              'web; the desktop runners were retired in SonicRelay#37.',
         );
       }
     });

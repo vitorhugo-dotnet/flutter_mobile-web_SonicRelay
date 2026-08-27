@@ -243,6 +243,137 @@ jobs:
             build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
           if-no-files-found: error
 
+  build-web:
+    name: Build web (WebAssembly)
+    needs: [checks, version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Where Pages serves the site from decides the base href, and getting it
+      # wrong is invisible until production: every asset request resolves under
+      # the wrong prefix, 404s, and leaves a blank page.
+      #
+      # `web/CNAME` is this repository's record of the custom domain configured
+      # in the Pages settings. With one, Pages serves the site at the root of
+      # that domain and redirects the `github.io` URL to it. Without one, it
+      # serves from `https://<owner>.github.io/<repo>/`, so the base href is
+      # derived from the repository name and survives a rename.
+      - name: Resolve the Pages base href
+        id: pages_base
+        shell: bash
+        run: |
+          CUSTOM_DOMAIN=""
+          if [[ -f web/CNAME ]]; then
+            CUSTOM_DOMAIN=$(tr -d '[:space:]' < web/CNAME)
+          fi
+
+          if [[ -n "$CUSTOM_DOMAIN" ]]; then
+            BASE_HREF="/"
+            echo "Building for https://${CUSTOM_DOMAIN}/ (base href '$BASE_HREF')."
+          else
+            BASE_HREF="/${{ github.event.repository.name }}/"
+            echo "Building for https://${{ github.repository_owner }}.github.io${BASE_HREF} (base href '$BASE_HREF')."
+          fi
+
+          echo "base_href=$BASE_HREF" >> "$GITHUB_OUTPUT"
+
+      # `--wasm` emits both the WasmGC bundle and a dart2js bundle; `flutter.js`
+      # picks between them per browser, so browsers without WasmGC still load.
+      - name: Build web
+        run: |
+          flutter build web \
+            --wasm \
+            --release \
+            --base-href "${{ steps.pages_base.outputs.base_href }}" \
+            --build-name "${{ needs.version.outputs.version_name }}" \
+            --build-number "${{ needs.version.outputs.version_code }}"
+
+      # The base href only exists in the built index.html, so this is the last
+      # point where a wrong one can still be caught by CI instead of by someone
+      # opening the site.
+      - name: Verify the published base href
+        shell: bash
+        run: |
+          EXPECTED='<base href="${{ steps.pages_base.outputs.base_href }}">'
+
+          if ! grep -qF "$EXPECTED" build/web/index.html; then
+            echo "build/web/index.html does not carry $EXPECTED:" >&2
+            grep -n 'base href' build/web/index.html >&2 || true
+            exit 1
+          fi
+
+          if [[ -f web/CNAME ]] && [[ ! -f build/web/CNAME ]]; then
+            echo "web/CNAME did not reach the Pages artifact." >&2
+            exit 1
+          fi
+
+      # Flutter Web is a single-page app: every route is served by index.html.
+      # GitHub Pages has no rewrite rules, so a request for a path that is not a
+      # real file falls through to 404.html — serving the app from there is what
+      # makes a deep link, a refresh or a shared URL land in the app instead of
+      # GitHub's own 404 page.
+      #
+      # It changes nothing today, because the app uses Flutter's default hash
+      # routing and Pages therefore only ever sees the base path. It is what
+      # makes switching to usePathUrlStrategy() a decision rather than a silent
+      # breakage in production.
+      - name: Serve the app from 404.html for unknown paths
+        run: cp build/web/index.html build/web/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy-pages:
+    name: Deploy web to GitHub Pages
+    # The three gates asked for, plus the build that produces the artifact:
+    # nothing reaches Pages unless the version resolves and analyze and test
+    # both pass.
+    needs: [version, checks, build-web]
+    # Pages has one production site, so only main publishes to it. A pull
+    # request still builds above, which is what catches web breakage early.
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # The workflow-level group is keyed by ref; Pages allows one deployment at
+    # a time across the whole site, so this one is keyed by the site.
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      # On a repository where Pages has never been turned on, the deployment
+      # API answers 404 and the job dies with "Ensure GitHub Pages has been
+      # enabled" — which is what happened on the first run of this job. This
+      # turns Pages on with the Actions build type using the workflow's own
+      # `pages: write` token, so publishing does not depend on someone finding
+      # the right settings page. It is a no-op once Pages is already enabled.
+      - name: Enable GitHub Pages with the Actions build type
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
   release:
     name: Persist version and publish GitHub Release
     needs: [version, checks, build-android]

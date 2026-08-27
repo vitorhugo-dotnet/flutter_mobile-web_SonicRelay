@@ -13,14 +13,51 @@ class DeviceCredentialStorageException implements Exception {
   String toString() => 'DeviceCredentialStorageException: $message';
 }
 
-class DeviceCredentialStorage {
-  const DeviceCredentialStorage(this._storage);
+/// The `platform` values the backend issues a device identity for.
+///
+/// `web` joins the two mobile clients for the browser publisher
+/// (dotnet_SonicRelay#33). The list stays closed rather than accepting any
+/// string so a typo in the platform façade fails here, at bootstrap, instead of
+/// registering a device the backend will not recognise.
+const deviceCredentialPlatforms = {'android', 'ios', 'web'};
+
+const _invalidCredentialMessage = 'Device credential is invalid.';
+
+/// Where a device credential lives between token exchanges.
+///
+/// Mobile keeps it in the platform keystore so the identity survives a restart;
+/// the browser keeps it in memory only, because dotnet_SonicRelay#33 requires a
+/// web publisher's identity to be ephemeral and never to reach `localStorage`.
+abstract interface class DeviceCredentialStorage {
+  Future<DeviceCredential?> read();
+
+  Future<void> write(DeviceCredential credential);
+
+  Future<void> clear();
+}
+
+/// Throws [DeviceCredentialStorageException] unless [credential] is one the
+/// backend could have issued.
+void validateDeviceCredential(DeviceCredential credential) {
+  if (credential.deviceId.trim().isEmpty ||
+      credential.credentialSecret.trim().isEmpty ||
+      credential.credentialVersion <= 0 ||
+      credential.deviceType.trim().isEmpty ||
+      !deviceCredentialPlatforms.contains(credential.platform)) {
+    throw const DeviceCredentialStorageException(_invalidCredentialMessage);
+  }
+}
+
+/// [DeviceCredentialStorage] backed by the platform keystore. The Android and
+/// iOS behaviour, where the viewer keeps one identity across launches.
+class SecureDeviceCredentialStorage implements DeviceCredentialStorage {
+  const SecureDeviceCredentialStorage(this._storage);
 
   static const _credentialKey = 'deviceIdentity.credential';
-  static const _invalidCredentialMessage = 'Device credential is invalid.';
 
   final FlutterSecureStorage _storage;
 
+  @override
   Future<DeviceCredential?> read() async {
     final encoded = await _storage.read(key: _credentialKey);
     if (encoded == null) return null;
@@ -56,12 +93,13 @@ class DeviceCredentialStorage {
       deviceType: deviceType,
       platform: platform,
     );
-    _validate(credential);
+    validateDeviceCredential(credential);
     return credential;
   }
 
+  @override
   Future<void> write(DeviceCredential credential) async {
-    _validate(credential);
+    validateDeviceCredential(credential);
     await _storage.write(
       key: _credentialKey,
       value: jsonEncode({
@@ -74,15 +112,6 @@ class DeviceCredentialStorage {
     );
   }
 
+  @override
   Future<void> clear() => _storage.delete(key: _credentialKey);
-
-  static void _validate(DeviceCredential credential) {
-    if (credential.deviceId.trim().isEmpty ||
-        credential.credentialSecret.trim().isEmpty ||
-        credential.credentialVersion <= 0 ||
-        credential.deviceType.trim().isEmpty ||
-        (credential.platform != 'android' && credential.platform != 'ios')) {
-      throw const DeviceCredentialStorageException(_invalidCredentialMessage);
-    }
-  }
 }
