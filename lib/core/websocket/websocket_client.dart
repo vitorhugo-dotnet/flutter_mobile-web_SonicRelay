@@ -1,6 +1,4 @@
 import 'dart:async';
-export 'websocket_connector_io.dart'
-    if (dart.library.html) 'websocket_connector_web.dart';
 import 'dart:math' as math;
 
 import '../diagnostics/diagnostic_log.dart';
@@ -18,12 +16,7 @@ enum WebSocketConnectionState {
   disconnected,
 }
 
-enum WebSocketDisconnectReason {
-  normal,
-  serverClosed,
-  transportError,
-  connectFailed,
-}
+enum WebSocketDisconnectReason { normal, serverClosed, transportError, connectFailed }
 
 /// A single open transport connection, abstracted so [WebSocketClient] can
 /// be tested without opening a real socket.
@@ -59,7 +52,6 @@ typedef WebSocketReconnectPredicate = bool Function(Object error);
 /// an attempt that fails anyway falls back to the normal backoff.
 typedef NetworkAvailabilityProbe = bool Function();
 
-/// Default [WebSocketConnector] backed by `dart:io`'s [WebSocket].
 /// How often an open signaling socket sends a keepalive ping.
 ///
 /// Between negotiations the signaling socket carries no traffic in either
@@ -67,7 +59,7 @@ typedef NetworkAvailabilityProbe = bool Function();
 /// initiates one — so without this it is idle, and intermediaries reap idle
 /// WebSockets. In production that reap was observed at a near-constant ~90s,
 /// killing every viewer session and forcing a full renegotiation each time;
-/// nginx's own default read timeout is 60s. `dart:io` leaves [WebSocket.pingInterval]
+/// nginx's own default read timeout is 60s. `dart:io` leaves `WebSocket.pingInterval`
 /// null by default, which is why the Windows publisher (`KeepAliveInterval = 20s`)
 /// survived on the same network where the Flutter viewer did not. Matching its
 /// 20s keeps a missed ping well inside the shortest window we know of.
@@ -151,7 +143,8 @@ class WebSocketClient {
   final DiagnosticLog _diagnosticLog;
   final ReconnectPolicy _reconnectPolicy;
   final NetworkAvailabilityProbe _isNetworkAvailable;
-  final Timer Function(Duration delay, void Function() callback) _scheduleTimer;
+  final Timer Function(Duration delay, void Function() callback)
+  _scheduleTimer;
   final math.Random _random;
 
   final _stateController =
@@ -282,7 +275,9 @@ class WebSocketClient {
           }
         },
         onDone: () {
-          unawaited(_diagnosticLog.write('WebSocket', 'socket closed by peer'));
+          unawaited(
+            _diagnosticLog.write('WebSocket', 'socket closed by peer'),
+          );
           _disconnectReasonController.add(
             WebSocketDisconnectReason.serverClosed,
           );

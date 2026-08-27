@@ -1,6 +1,3 @@
-import 'package:flutter/foundation.dart';
-
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,9 +5,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/diagnostics/diagnostic_log.dart';
+import '../../core/diagnostics/platform_diagnostic_log.dart';
 import '../../core/http/auth_interceptor.dart';
 import '../../core/http/dio_client.dart';
 import '../../core/network/network_monitor.dart';
+import '../../core/platform/host_device_name.dart';
+import '../../core/platform/host_platform.dart';
 import '../../core/storage/background_playback_storage.dart';
 import '../../core/storage/coturn_override_storage.dart';
 import '../../core/storage/onboarding_storage.dart';
@@ -26,10 +26,12 @@ import '../../core/webrtc/ice_servers_api.dart';
 import '../../core/webrtc/ice_servers_repository.dart';
 import '../../core/webrtc/rtc_ice_server_config.dart';
 import '../../core/webrtc/rtc_peer_connection_factory.dart';
+import '../../core/websocket/platform_websocket_connector.dart';
 import '../../core/websocket/websocket_client.dart';
 import '../../features/device_identity/data/device_credential_storage.dart';
 import '../../features/device_identity/data/device_identity_api.dart';
 import '../../features/device_identity/data/device_identity_session.dart';
+import '../../features/device_identity/data/in_memory_device_credential_storage.dart';
 import '../../features/pairing/data/pairing_api.dart';
 import '../../features/pairing/data/pairing_repository.dart';
 import '../../features/pairing/domain/device_pairing.dart';
@@ -54,7 +56,7 @@ final diagnosticsDirectoryProvider = Provider<String>(
 );
 
 final diagnosticLogProvider = Provider<DiagnosticLog>(
-  (ref) => DiagnosticLog(ref.watch(diagnosticsDirectoryProvider)),
+  (ref) => createDiagnosticLog(ref.watch(diagnosticsDirectoryProvider)),
 );
 
 final serverConfigStorageProvider = Provider<ServerConfigStorage>(
@@ -259,56 +261,35 @@ class OnboardingCompletedNotifier extends Notifier<bool> {
   }
 }
 
-final devicePlatformProvider = Provider<String>(
-  (ref) => kIsWeb ? 'web' : defaultTargetPlatform.name,
-);
+/// The `platform` value this client reports at device bootstrap.
+final devicePlatformProvider = Provider<String>((ref) => hostPlatformName);
 
 /// Opens an external URL (currently the privacy policy). Behind a provider so a
 /// widget test can assert what the app tried to open without driving the
 /// url_launcher platform channel, which has no implementation under
 /// `flutter test`. Returns false when no handler exists for the URL.
-final externalLinkLauncherProvider = Provider<Future<bool> Function(Uri)>((
-  ref,
-) {
-  return (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
+final externalLinkLauncherProvider =
+    Provider<Future<bool> Function(Uri)>((ref) {
+  return (uri) =>
+      launchUrl(uri, mode: LaunchMode.externalApplication);
 });
 
-/// Resolves this device's human name (model or user-assigned name) so the
-/// publisher's paired-viewers list can show "Pixel 8" instead of a GUID or a
-/// generic "SonicRelay android viewer" label. Best-effort by design: returning
-/// null keeps the generic fallback name.
-final deviceDisplayNameProvider = Provider<Future<String?> Function()>((ref) {
-  return () async {
-    final plugin = DeviceInfoPlugin();
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      final info = await plugin.androidInfo;
-      final manufacturer = info.manufacturer.trim();
-      final model = info.model.trim();
-      if (model.isEmpty) return null;
-      if (manufacturer.isEmpty ||
-          model.toLowerCase().startsWith(manufacturer.toLowerCase())) {
-        return model;
-      }
-      return '${manufacturer[0].toUpperCase()}${manufacturer.substring(1)} '
-          '$model';
-    }
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      final info = await plugin.iosInfo;
-      final name = info.name.trim();
-      return name.isEmpty ? info.utsname.machine : name;
-    }
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS)
-      return (await plugin.macOsInfo).computerName;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
-      return (await plugin.windowsInfo).computerName;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux)
-      return (await plugin.linuxInfo).prettyName;
-    return null;
-  };
-});
+/// The device-name lookup the identity session uses at bootstrap. Behind a
+/// provider so it can be overridden without driving the `device_info_plus`
+/// platform channel.
+final deviceDisplayNameProvider = Provider<Future<String?> Function()>(
+  (ref) => resolveHostDeviceName,
+);
 
+/// Where this client keeps its device credential.
+///
+/// The browser gets the in-memory store: dotnet_SonicRelay#33 requires a web
+/// publisher's identity to be ephemeral, and `flutter_secure_storage` on the
+/// web is `localStorage` behind a reassuring name.
 final deviceCredentialStorageProvider = Provider<DeviceCredentialStorage>(
-  (ref) => DeviceCredentialStorage(ref.watch(secureStorageProvider)),
+  (ref) => isWebHost
+      ? InMemoryDeviceCredentialStorage()
+      : SecureDeviceCredentialStorage(ref.watch(secureStorageProvider)),
 );
 
 final deviceIdentityDioProvider = Provider<Dio>((ref) {
@@ -536,20 +517,18 @@ final sessionsRepositoryProvider = Provider<SessionsRepository>(
 /// at any moment and this is the only signal the viewer gets.
 final discoverableSessionsProvider =
     StreamProvider.autoDispose<List<DiscoverableSession>>((ref) async* {
-      final repository = ref.watch(sessionsRepositoryProvider);
-      while (true) {
-        yield await repository.discover();
-        await Future<void>.delayed(const Duration(seconds: 5));
-      }
-    });
+  final repository = ref.watch(sessionsRepositoryProvider);
+  while (true) {
+    yield await repository.discover();
+    await Future<void>.delayed(const Duration(seconds: 5));
+  }
+});
 
 /// Polls the public radio room's availability while the join page is mounted. Fetching this
 /// also auto-pairs this device with the room server-side, so — unlike
 /// [discoverableSessionsProvider] — no prior manual pairing is ever required to see or join
 /// it (docs/superpowers/specs/2026-08-19-public-radio-room-design.md in dotnet_SonicRelay).
-final publicRoomProvider = StreamProvider.autoDispose<PublicRoomInfo>((
-  ref,
-) async* {
+final publicRoomProvider = StreamProvider.autoDispose<PublicRoomInfo>((ref) async* {
   final repository = ref.watch(sessionsRepositoryProvider);
   while (true) {
     yield await repository.getPublicRoom();
@@ -564,17 +543,14 @@ final publicRoomProvider = StreamProvider.autoDispose<PublicRoomInfo>((
 /// `connectivity_plus` here; everything else (including tests) keeps the plain
 /// backoff by always reporting itself online.
 final networkMonitorProvider = Provider<NetworkMonitor>(
-  (ref) =>
-      !kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.android ||
-              defaultTargetPlatform == TargetPlatform.iOS)
+  (ref) => isMobileHost
       ? ConnectivityNetworkMonitor()
       : const NoopNetworkMonitor(),
 );
 
 final webSocketClientProvider = Provider<WebSocketClient>(
   (ref) => WebSocketClient(
-    connector: ioWebSocketConnector,
+    connector: defaultWebSocketConnector,
     diagnosticLog: ref.watch(diagnosticLogProvider),
     isNetworkAvailable: () => ref.read(networkMonitorProvider).isOnline,
   ),
@@ -660,7 +636,7 @@ class BackgroundPlaybackNotifier extends Notifier<bool> {
 final foregroundStreamServiceProvider = Provider<ForegroundStreamService>((
   ref,
 ) {
-  final service = !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+  final service = isAndroidHost
       ? AndroidForegroundStreamServiceBridge()
       : NoopForegroundStreamService();
   ref.onDispose(service.dispose);
