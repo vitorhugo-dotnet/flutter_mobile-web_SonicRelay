@@ -101,8 +101,8 @@ class PairingViewModel extends Notifier<PairingState> {
     await _complete(payload);
   }
 
-  Future<void> completeScanned(String raw) async {
-    if (_scanSubmissionInFlight) return;
+  Future<bool> completeScanned(String raw) async {
+    if (_scanSubmissionInFlight) return false;
 
     PairingChallengePayload payload;
     try {
@@ -116,12 +116,12 @@ class PairingViewModel extends Notifier<PairingState> {
         status: PairingStatus.failed,
         errorMessage: 'Scan a valid SonicRelay pairing QR code.',
       );
-      return;
+      return false;
     }
 
     _scanSubmissionInFlight = true;
     try {
-      await _complete(payload);
+      return await _complete(payload);
     } finally {
       _scanSubmissionInFlight = false;
     }
@@ -196,8 +196,8 @@ class PairingViewModel extends Notifier<PairingState> {
     );
   }
 
-  Future<void> _complete(PairingChallengePayload payload) async {
-    if (state.status == PairingStatus.submitting) return;
+  Future<bool> _complete(PairingChallengePayload payload) async {
+    if (state.status == PairingStatus.submitting) return false;
     state = PairingState(
       challengeId: state.challengeId,
       pairingCode: state.pairingCode,
@@ -218,10 +218,13 @@ class PairingViewModel extends Notifier<PairingState> {
         pairings: pairings,
         revokingPairingIds: state.revokingPairingIds,
       );
+      return true;
     } on PairingFailure catch (error) {
       _setFailure(error.message);
+      return false;
     } catch (_) {
       _setFailure('Unable to pair this device. Please retry.');
+      return false;
     }
   }
 

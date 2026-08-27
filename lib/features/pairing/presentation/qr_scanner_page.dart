@@ -6,7 +6,7 @@ import 'package:flutter_zxing/flutter_zxing.dart';
 
 import '../domain/pairing_challenge_payload.dart';
 
-typedef PairingPayloadCallback = FutureOr<void> Function(String raw);
+typedef PairingPayloadCallback = FutureOr<bool> Function(String raw);
 
 abstract interface class PairingScannerController {
   Future<void> start();
@@ -93,7 +93,7 @@ class ZxingPairingScannerController implements PairingScannerController {
           tryHarder: true,
           tryRotate: true,
           tryDownscale: true,
-          cropPercent: 0.8,
+          cropPercent: 1.0,
           showGallery: false,
           showToggleCamera: false,
           onScan: (code) {
@@ -209,9 +209,20 @@ class _QrScannerPageState extends State<QrScannerPage>
       return;
     }
 
-    _accepted = true;
     await _controller.stop();
-    await widget.onAccepted(raw);
+    final paired = await widget.onAccepted(raw);
+    if (!mounted) return;
+    if (paired) {
+      _accepted = true;
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Unable to pair this device.')),
+      );
+    await _controller.start();
   }
 
   void _manualFallback() {

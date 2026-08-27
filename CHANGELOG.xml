@@ -1,7 +1,7 @@
 <en-US>
-- Fixed the browser version: sonicrelay.hugodotnet.dev now opens the app instead of a blank page. 🌐
+- Improved QR pairing reliability and retry behavior when a scanned code is rejected. 📷
 </en-US>
 
 <pt-BR>
-- Corrigimos a versão para navegador: sonicrelay.hugodotnet.dev agora abre o app em vez de uma tela em branco. 🌐
+- Melhoramos a confiabilidade do pareamento por QR Code e as tentativas quando um código escaneado é rejeitado. 📷
 </pt-BR>

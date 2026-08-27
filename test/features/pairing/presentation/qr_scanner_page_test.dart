@@ -42,9 +42,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(useMaterial3: false),
         home: QrScannerPage(
           scannerController: controller,
-          onAccepted: (_) => accepted += 1,
+          onAccepted: (_) {
+            accepted += 1;
+            return true;
+          },
         ),
       ),
     );
@@ -58,17 +62,52 @@ void main() {
     expect(controller.stopCalls, 1);
   });
 
-  testWidgets('an unparseable QR surfaces an explicit error and keeps scanning', (
-    tester,
-  ) async {
-    final controller = _FakeScannerController(raw: 'https://example.com');
-    var accepted = 0;
+  testWidgets(
+    'an unparseable QR surfaces an explicit error and keeps scanning',
+    (tester) async {
+      final controller = _FakeScannerController(raw: 'https://example.com');
+      var accepted = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: QrScannerPage(
+            scannerController: controller,
+            onAccepted: (_) {
+              accepted += 1;
+              return true;
+            },
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('scanner-detect')));
+      await tester.pump();
+
+      expect(
+        find.text('That QR code is not a valid pairing code.'),
+        findsOneWidget,
+      );
+      expect(accepted, 0);
+      expect(controller.stopCalls, 0);
+
+      // Re-scanning the same rejected payload does not queue a second SnackBar.
+      await tester.tap(find.byKey(const Key('scanner-detect')));
+      await tester.pump();
+      expect(
+        find.text('That QR code is not a valid pairing code.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('keeps scanning when pairing rejects a valid QR', (tester) async {
+    final controller = _FakeScannerController(raw: validPayload);
 
     await tester.pumpWidget(
       MaterialApp(
         home: QrScannerPage(
           scannerController: controller,
-          onAccepted: (_) => accepted += 1,
+          onAccepted: (_) async => false,
         ),
       ),
     );
@@ -76,20 +115,9 @@ void main() {
     await tester.tap(find.byKey(const Key('scanner-detect')));
     await tester.pump();
 
-    expect(
-      find.text('That QR code is not a valid pairing code.'),
-      findsOneWidget,
-    );
-    expect(accepted, 0);
-    expect(controller.stopCalls, 0);
-
-    // Re-scanning the same rejected payload does not queue a second SnackBar.
-    await tester.tap(find.byKey(const Key('scanner-detect')));
-    await tester.pump();
-    expect(
-      find.text('That QR code is not a valid pairing code.'),
-      findsOneWidget,
-    );
+    expect(find.text('Unable to pair this device.'), findsOneWidget);
+    expect(controller.stopCalls, 1);
+    expect(controller.startCalls, 2);
   });
 
   testWidgets('camera denial keeps a manual fallback', (tester) async {
@@ -100,7 +128,7 @@ void main() {
       MaterialApp(
         home: QrScannerPage(
           scannerController: controller,
-          onAccepted: (_) {},
+          onAccepted: (_) async => true,
           onManualFallback: () => manualFallbacks += 1,
         ),
       ),
@@ -118,7 +146,10 @@ void main() {
     final controller = _FakeScannerController();
     await tester.pumpWidget(
       MaterialApp(
-        home: QrScannerPage(scannerController: controller, onAccepted: (_) {}),
+        home: QrScannerPage(
+          scannerController: controller,
+          onAccepted: (_) async => true,
+        ),
       ),
     );
     expect(controller.startCalls, 1);
@@ -130,9 +161,7 @@ void main() {
     ]) {
       tester.binding.handleAppLifecycleStateChanged(lifecycleState);
       await tester.pump();
-      tester.binding.handleAppLifecycleStateChanged(
-        AppLifecycleState.resumed,
-      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
     }
 
@@ -149,7 +178,10 @@ void main() {
     final controller = _FakeScannerController();
     await tester.pumpWidget(
       MaterialApp(
-        home: QrScannerPage(scannerController: controller, onAccepted: (_) {}),
+        home: QrScannerPage(
+          scannerController: controller,
+          onAccepted: (_) async => true,
+        ),
       ),
     );
     expect(controller.startCalls, 1);
@@ -166,28 +198,25 @@ void main() {
     final controller = _FakeScannerController(raw: validPayload);
     await tester.pumpWidget(
       MaterialApp(
-        home: QrScannerPage(scannerController: controller, onAccepted: (_) {}),
+        home: QrScannerPage(
+          scannerController: controller,
+          onAccepted: (_) async => true,
+        ),
       ),
     );
     await tester.tap(find.byKey(const Key('scanner-detect')));
     await tester.pump();
     expect(controller.startCalls, 1);
 
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.paused,
-    );
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
     expect(controller.startCalls, 1);
 
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     await tester.pump();
     final startsAfterDispose = controller.startCalls;
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
 
     expect(controller.startCalls, startsAfterDispose);
@@ -198,7 +227,10 @@ void main() {
     final controller = _FakeScannerController();
     await tester.pumpWidget(
       MaterialApp(
-        home: QrScannerPage(scannerController: controller, onAccepted: (_) {}),
+        home: QrScannerPage(
+          scannerController: controller,
+          onAccepted: (_) async => true,
+        ),
       ),
     );
 
@@ -237,7 +269,7 @@ void main() {
       expect(reader.tryHarder, isTrue);
       expect(reader.tryRotate, isTrue);
       expect(reader.tryDownscale, isTrue);
-      expect(reader.cropPercent, greaterThanOrEqualTo(0.8));
+      expect(reader.cropPercent, 1.0);
 
       await controller.stop();
       await tester.pump();

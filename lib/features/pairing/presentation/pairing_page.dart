@@ -219,8 +219,11 @@ class _PairingPageState extends ConsumerState<PairingPage> {
       MaterialPageRoute<void>(
         builder: (scannerContext) => QrScannerPage(
           onAccepted: (raw) async {
-            await viewModel.completeScanned(raw);
-            if (scannerContext.mounted) Navigator.of(scannerContext).pop();
+            final paired = await viewModel.completeScanned(raw);
+            if (paired && scannerContext.mounted) {
+              Navigator.of(scannerContext).pop();
+            }
+            return paired;
           },
           onManualFallback: () => Navigator.of(scannerContext).pop(),
         ),
