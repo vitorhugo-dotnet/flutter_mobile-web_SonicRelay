@@ -233,6 +233,11 @@ void main() {
       await controller.start();
       await tester.pump();
       expect(find.byType(ReaderWidget), findsOneWidget);
+      final reader = tester.widget<ReaderWidget>(find.byType(ReaderWidget));
+      expect(reader.tryHarder, isTrue);
+      expect(reader.tryRotate, isTrue);
+      expect(reader.tryDownscale, isTrue);
+      expect(reader.cropPercent, greaterThanOrEqualTo(0.8));
 
       await controller.stop();
       await tester.pump();

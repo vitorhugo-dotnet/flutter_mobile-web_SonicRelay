@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
@@ -220,10 +221,7 @@ class _ConnectionSection extends ConsumerWidget {
           subtitle: 'ICE transport',
         ),
         const SizedBox(height: AppSpacing.sm),
-        const Material(
-          color: Colors.transparent,
-          child: RelayModeToggle(),
-        ),
+        const Material(color: Colors.transparent, child: RelayModeToggle()),
         const SizedBox(height: AppSpacing.sm),
         Text(
           'Synced to your paired devices.',
@@ -238,7 +236,8 @@ class _DiagnosticsSection extends ConsumerStatefulWidget {
   const _DiagnosticsSection();
 
   @override
-  ConsumerState<_DiagnosticsSection> createState() => _DiagnosticsSectionState();
+  ConsumerState<_DiagnosticsSection> createState() =>
+      _DiagnosticsSectionState();
 }
 
 class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
@@ -253,7 +252,9 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
     try {
       final path = await ref.read(diagnosticLogProvider).export();
       if (!mounted) return;
-      await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+      if (!kIsWeb) {
+        await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+      }
       setState(() => _message = 'Exported diagnostics log.');
     } catch (_) {
       setState(() => _message = 'Export failed: could not write the log file.');
@@ -295,7 +296,9 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
       await ref.read(diagnosticLogProvider).clear();
       setState(() => _message = 'Cleared the diagnostics log.');
     } catch (_) {
-      setState(() => _message = 'Clear failed: could not delete the log file(s).');
+      setState(
+        () => _message = 'Clear failed: could not delete the log file(s).',
+      );
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -310,7 +313,8 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
           const _SettingsRow(
             icon: Icons.bug_report_outlined,
             title: 'Diagnostics log',
-            subtitle: 'Redacted connection/session history for support requests',
+            subtitle:
+                'Redacted connection/session history for support requests',
           ),
           const SizedBox(height: AppSpacing.md),
           Row(

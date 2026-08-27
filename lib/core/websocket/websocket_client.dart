@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io';
+export 'websocket_connector_io.dart'
+    if (dart.library.html) 'websocket_connector_web.dart';
 import 'dart:math' as math;
 
 import '../diagnostics/diagnostic_log.dart';
@@ -17,7 +18,12 @@ enum WebSocketConnectionState {
   disconnected,
 }
 
-enum WebSocketDisconnectReason { normal, serverClosed, transportError, connectFailed }
+enum WebSocketDisconnectReason {
+  normal,
+  serverClosed,
+  transportError,
+  connectFailed,
+}
 
 /// A single open transport connection, abstracted so [WebSocketClient] can
 /// be tested without opening a real socket.
@@ -76,36 +82,6 @@ const signalingPingInterval = Duration(seconds: 20);
 /// next retry, and the client is wedged with no timer left to recover it.
 /// Bounding the attempt keeps the reconnect chain alive.
 const signalingConnectTimeout = Duration(seconds: 15);
-
-Future<WebSocketConnection> ioWebSocketConnector(
-  Uri uri,
-  Map<String, String> headers,
-) async {
-  final socket = await WebSocket.connect(
-    uri.toString(),
-    headers: headers,
-  ).timeout(signalingConnectTimeout);
-  socket.pingInterval = signalingPingInterval;
-  return IoWebSocketConnection(socket);
-}
-
-class IoWebSocketConnection implements WebSocketConnection {
-  IoWebSocketConnection(this._socket);
-
-  final WebSocket _socket;
-
-  /// How often this socket sends a keepalive ping, or null when it sends none.
-  Duration? get pingInterval => _socket.pingInterval;
-
-  @override
-  Stream<dynamic> get stream => _socket;
-
-  @override
-  void add(String data) => _socket.add(data);
-
-  @override
-  Future<void> close() => _socket.close();
-}
 
 /// Exponential backoff with a cap, used between reconnect attempts.
 class ReconnectPolicy {
@@ -175,8 +151,7 @@ class WebSocketClient {
   final DiagnosticLog _diagnosticLog;
   final ReconnectPolicy _reconnectPolicy;
   final NetworkAvailabilityProbe _isNetworkAvailable;
-  final Timer Function(Duration delay, void Function() callback)
-  _scheduleTimer;
+  final Timer Function(Duration delay, void Function() callback) _scheduleTimer;
   final math.Random _random;
 
   final _stateController =
@@ -307,9 +282,7 @@ class WebSocketClient {
           }
         },
         onDone: () {
-          unawaited(
-            _diagnosticLog.write('WebSocket', 'socket closed by peer'),
-          );
+          unawaited(_diagnosticLog.write('WebSocket', 'socket closed by peer'));
           _disconnectReasonController.add(
             WebSocketDisconnectReason.serverClosed,
           );
