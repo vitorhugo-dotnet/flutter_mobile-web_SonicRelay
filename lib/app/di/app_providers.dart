@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
@@ -260,17 +260,17 @@ class OnboardingCompletedNotifier extends Notifier<bool> {
 }
 
 final devicePlatformProvider = Provider<String>(
-  (ref) => Platform.operatingSystem,
+  (ref) => kIsWeb ? 'web' : defaultTargetPlatform.name,
 );
 
 /// Opens an external URL (currently the privacy policy). Behind a provider so a
 /// widget test can assert what the app tried to open without driving the
 /// url_launcher platform channel, which has no implementation under
 /// `flutter test`. Returns false when no handler exists for the URL.
-final externalLinkLauncherProvider =
-    Provider<Future<bool> Function(Uri)>((ref) {
-  return (uri) =>
-      launchUrl(uri, mode: LaunchMode.externalApplication);
+final externalLinkLauncherProvider = Provider<Future<bool> Function(Uri)>((
+  ref,
+) {
+  return (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
 });
 
 /// Resolves this device's human name (model or user-assigned name) so the
@@ -280,7 +280,7 @@ final externalLinkLauncherProvider =
 final deviceDisplayNameProvider = Provider<Future<String?> Function()>((ref) {
   return () async {
     final plugin = DeviceInfoPlugin();
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       final info = await plugin.androidInfo;
       final manufacturer = info.manufacturer.trim();
       final model = info.model.trim();
@@ -292,14 +292,17 @@ final deviceDisplayNameProvider = Provider<Future<String?> Function()>((ref) {
       return '${manufacturer[0].toUpperCase()}${manufacturer.substring(1)} '
           '$model';
     }
-    if (Platform.isIOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       final info = await plugin.iosInfo;
       final name = info.name.trim();
       return name.isEmpty ? info.utsname.machine : name;
     }
-    if (Platform.isMacOS) return (await plugin.macOsInfo).computerName;
-    if (Platform.isWindows) return (await plugin.windowsInfo).computerName;
-    if (Platform.isLinux) return (await plugin.linuxInfo).prettyName;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS)
+      return (await plugin.macOsInfo).computerName;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+      return (await plugin.windowsInfo).computerName;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux)
+      return (await plugin.linuxInfo).prettyName;
     return null;
   };
 });
@@ -533,18 +536,20 @@ final sessionsRepositoryProvider = Provider<SessionsRepository>(
 /// at any moment and this is the only signal the viewer gets.
 final discoverableSessionsProvider =
     StreamProvider.autoDispose<List<DiscoverableSession>>((ref) async* {
-  final repository = ref.watch(sessionsRepositoryProvider);
-  while (true) {
-    yield await repository.discover();
-    await Future<void>.delayed(const Duration(seconds: 5));
-  }
-});
+      final repository = ref.watch(sessionsRepositoryProvider);
+      while (true) {
+        yield await repository.discover();
+        await Future<void>.delayed(const Duration(seconds: 5));
+      }
+    });
 
 /// Polls the public radio room's availability while the join page is mounted. Fetching this
 /// also auto-pairs this device with the room server-side, so — unlike
 /// [discoverableSessionsProvider] — no prior manual pairing is ever required to see or join
 /// it (docs/superpowers/specs/2026-08-19-public-radio-room-design.md in dotnet_SonicRelay).
-final publicRoomProvider = StreamProvider.autoDispose<PublicRoomInfo>((ref) async* {
+final publicRoomProvider = StreamProvider.autoDispose<PublicRoomInfo>((
+  ref,
+) async* {
   final repository = ref.watch(sessionsRepositoryProvider);
   while (true) {
     yield await repository.getPublicRoom();
@@ -559,7 +564,10 @@ final publicRoomProvider = StreamProvider.autoDispose<PublicRoomInfo>((ref) asyn
 /// `connectivity_plus` here; everything else (including tests) keeps the plain
 /// backoff by always reporting itself online.
 final networkMonitorProvider = Provider<NetworkMonitor>(
-  (ref) => Platform.isAndroid || Platform.isIOS
+  (ref) =>
+      !kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)
       ? ConnectivityNetworkMonitor()
       : const NoopNetworkMonitor(),
 );
@@ -652,7 +660,7 @@ class BackgroundPlaybackNotifier extends Notifier<bool> {
 final foregroundStreamServiceProvider = Provider<ForegroundStreamService>((
   ref,
 ) {
-  final service = Platform.isAndroid
+  final service = !kIsWeb && defaultTargetPlatform == TargetPlatform.android
       ? AndroidForegroundStreamServiceBridge()
       : NoopForegroundStreamService();
   ref.onDispose(service.dispose);

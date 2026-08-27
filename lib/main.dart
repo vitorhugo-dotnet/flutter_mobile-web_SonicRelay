@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
@@ -24,12 +25,16 @@ Future<void> main() async {
   final savedCoturnOverride = await const CoturnOverrideStorage(
     secureStorage,
   ).read();
-  final savedKeepPlaying =
-      await const BackgroundPlaybackStorage(secureStorage).read();
+  final savedKeepPlaying = await const BackgroundPlaybackStorage(
+    secureStorage,
+  ).read();
   final savedThemeMode = await const ThemeModeStorage(secureStorage).read();
-  final savedOnboardingCompleted =
-      await const OnboardingStorage(secureStorage).read();
-  final diagnosticsDirectory = (await getApplicationSupportDirectory()).path;
+  final savedOnboardingCompleted = await const OnboardingStorage(
+    secureStorage,
+  ).read();
+  final diagnosticsDirectory = kIsWeb
+      ? 'web'
+      : (await getApplicationSupportDirectory()).path;
 
   runApp(
     ProviderScope(
