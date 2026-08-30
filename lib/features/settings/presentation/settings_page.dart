@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../app/di/app_providers.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../core/diagnostics/diagnostic_log.dart';
 import '../../../core/widgets/sonic_button.dart';
 import '../../../core/widgets/sonic_card.dart';
 import '../../support/presentation/widgets/support_project_card.dart';
@@ -250,10 +251,12 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
       _message = null;
     });
     try {
-      final path = await ref.read(diagnosticLogProvider).export();
+      final result = await ref.read(diagnosticLogProvider).export();
       if (!mounted) return;
-      if (!kIsWeb) {
-        await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+      if (!kIsWeb && result is DiagnosticFileExport) {
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(result.path)]),
+        );
       }
       setState(() => _message = 'Exported diagnostics log.');
     } catch (_) {

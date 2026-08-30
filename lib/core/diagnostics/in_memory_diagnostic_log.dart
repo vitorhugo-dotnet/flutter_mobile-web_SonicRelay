@@ -16,7 +16,7 @@ class InMemoryDiagnosticLog extends DiagnosticLog {
   Future<void> deletePersistedEvents() async {}
 
   @override
-  Future<String> exportPersistedEvents() async => throw UnsupportedError(
+  Future<DiagnosticExportResult> exportPersistedEvents() async => throw UnsupportedError(
     'Diagnostics are kept in memory in the browser and cannot be exported to '
     'a file. Read them on the settings screen instead.',
   );

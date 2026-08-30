@@ -3,6 +3,22 @@ import 'dart:async';
 import 'diagnostic_event.dart';
 import 'diagnostic_redactor.dart';
 
+sealed class DiagnosticExportResult {
+  const DiagnosticExportResult();
+}
+
+final class DiagnosticFileExport extends DiagnosticExportResult {
+  const DiagnosticFileExport(this.path);
+
+  final String path;
+}
+
+final class DiagnosticDownloadExport extends DiagnosticExportResult {
+  const DiagnosticDownloadExport(this.filename);
+
+  final String filename;
+}
+
 /// Redacted, bounded diagnostic log for the viewer. Mirrors
 /// windows_SonicRelay's DiagnosticLog: a 100-event in-memory ring buffer plus
 /// whatever durable form the platform can offer.
@@ -61,8 +77,9 @@ abstract class DiagnosticLog {
   });
 
   /// Concatenates every retained event (oldest first) into one exported file
-  /// and returns its path. Events are already redacted at write time.
-  Future<String> export() => _enqueue(exportPersistedEvents);
+  /// and returns a platform-neutral export result. Events are already redacted
+  /// at write time.
+  Future<DiagnosticExportResult> export() => _enqueue(exportPersistedEvents);
 
   /// Writes one already-redacted event to the platform's durable store.
   Future<void> persistEvent(DiagnosticEvent event);
@@ -70,8 +87,8 @@ abstract class DiagnosticLog {
   /// Drops everything [persistEvent] has written so far.
   Future<void> deletePersistedEvents();
 
-  /// Collects the durable store into a single file and returns its path.
-  Future<String> exportPersistedEvents();
+  /// Collects the durable store into one platform-appropriate export result.
+  Future<DiagnosticExportResult> exportPersistedEvents();
 
   Future<T> _enqueue<T>(Future<T> Function() action) {
     final result = _queue.then((_) => action());

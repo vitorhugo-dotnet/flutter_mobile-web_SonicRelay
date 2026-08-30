@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sonic_relay/core/diagnostics/diagnostic_log.dart';
 import 'package:sonic_relay/core/diagnostics/file_diagnostic_log.dart';
 
 void main() {
@@ -69,16 +70,21 @@ void main() {
       expect(recentHasSecond, fileHasSecond);
     });
 
-    test('export concatenates retained files into one file and returns its path', () async {
+    test('export returns a file result with the generated path and ordered events', () async {
       final log = FileDiagnosticLog(tempDir.path);
       await log.write('auth', 'first');
       await log.write('auth', 'second');
 
-      final exportedPath = await log.export();
+      final result = await log.export();
 
+      expect(result, isA<DiagnosticFileExport>());
+      final exportedPath = (result as DiagnosticFileExport).path;
+      expect(
+        File(exportedPath).parent.path,
+        Directory('${tempDir.path}/exports').path,
+      );
       final content = await File(exportedPath).readAsString();
-      expect(content, contains('first'));
-      expect(content, contains('second'));
+      expect(content.indexOf('first'), lessThan(content.indexOf('second')));
     });
 
     test('recentEvents is capped at 100 entries', () async {
