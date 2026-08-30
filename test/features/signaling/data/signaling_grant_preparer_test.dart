@@ -81,6 +81,25 @@ void main() {
       await Future.wait([first, second]);
     });
 
+    test('keeps a pending POST coalesced after a caller times out', () async {
+      final completion = Completer<void>();
+      postAdapter.onPost = () => completion.future;
+
+      final first = preparer.prepare('session-1');
+      await expectLater(
+        first.timeout(Duration.zero),
+        throwsA(isA<TimeoutException>()),
+      );
+      final second = preparer.prepare('session-1');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(identical(first, second), isTrue);
+      expect(postAdapter.requests, hasLength(1));
+
+      completion.complete();
+      await second;
+    });
+
     test(
       'posts the cached bearer, session JSON, and browser credentials',
       () async {

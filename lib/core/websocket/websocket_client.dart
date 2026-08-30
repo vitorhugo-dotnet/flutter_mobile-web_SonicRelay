@@ -131,12 +131,14 @@ class WebSocketClient {
     required WebSocketConnector connector,
     required DiagnosticLog diagnosticLog,
     ReconnectPolicy reconnectPolicy = const ReconnectPolicy(),
+    Duration beforeConnectTimeout = signalingConnectTimeout,
     NetworkAvailabilityProbe? isNetworkAvailable,
     Timer Function(Duration delay, void Function() callback)? scheduleTimer,
     math.Random? random,
   }) : _connector = connector,
        _diagnosticLog = diagnosticLog,
        _reconnectPolicy = reconnectPolicy,
+       _beforeConnectTimeout = beforeConnectTimeout,
        _isNetworkAvailable = isNetworkAvailable ?? _alwaysAvailable,
        _scheduleTimer = scheduleTimer ?? Timer.new,
        _random = random ?? math.Random();
@@ -146,6 +148,7 @@ class WebSocketClient {
   final WebSocketConnector _connector;
   final DiagnosticLog _diagnosticLog;
   final ReconnectPolicy _reconnectPolicy;
+  final Duration _beforeConnectTimeout;
   final NetworkAvailabilityProbe _isNetworkAvailable;
   final Timer Function(Duration delay, void Function() callback)
   _scheduleTimer;
@@ -261,7 +264,10 @@ class WebSocketClient {
           'connecting to $uri (attempt $_attempt)',
         ),
       );
-      await _beforeConnect?.call(isReconnect);
+      final beforeConnect = _beforeConnect;
+      if (beforeConnect != null) {
+        await beforeConnect(isReconnect).timeout(_beforeConnectTimeout);
+      }
       if (!_isCurrent(generation)) return;
       final headersProvider = _headersProvider;
       final headers = headersProvider == null

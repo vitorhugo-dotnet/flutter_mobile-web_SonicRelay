@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:dio/dio.dart';
+
 import '../../../core/diagnostics/diagnostic_log.dart';
 import '../../../core/network/network_monitor.dart';
 import '../../../core/websocket/websocket_client.dart';
@@ -121,15 +123,7 @@ class SignalingClient {
     await _webSocketClient.connect(
       uri,
       beforeConnect: usesBrowserGrant
-          ? (_) async {
-              final preparer = _signalingGrantPreparer;
-              if (preparer == null) {
-                throw StateError(
-                  'Browser signaling requires a grant preparer.',
-                );
-              }
-              await preparer.prepare(session.sessionId);
-            }
+          ? (_) => _prepareBrowserGrant(session.sessionId)
           : null,
       headersProvider: usesBrowserGrant
           ? null
@@ -138,8 +132,28 @@ class SignalingClient {
               return {'Authorization': 'Bearer $token'};
             },
       shouldReconnectOnError: (error) =>
-          error is! DeviceIdentitySessionInvalidatedException,
+          error is! DeviceIdentitySessionInvalidatedException &&
+          error is! SignalingGrantRejectedException,
     );
+  }
+
+  Future<void> _prepareBrowserGrant(String sessionId) async {
+    final preparer = _signalingGrantPreparer;
+    if (preparer == null) {
+      throw StateError('Browser signaling requires a grant preparer.');
+    }
+    try {
+      await preparer.prepare(sessionId);
+    } on DioException catch (error) {
+      final statusCode = error.response?.statusCode;
+      if (statusCode == 401 ||
+          statusCode == 403 ||
+          statusCode == 404 ||
+          statusCode == 410) {
+        throw SignalingGrantRejectedException(statusCode!);
+      }
+      rethrow;
+    }
   }
 
   Uri _buildUri(Uri base, String sessionId) {

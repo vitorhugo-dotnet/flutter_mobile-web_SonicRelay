@@ -5,6 +5,18 @@ abstract interface class SignalingGrantPreparer {
   Future<void> prepare(String sessionId);
 }
 
+/// A token-free terminal failure indicating that retrying this session grant
+/// cannot succeed without a new join or device identity.
+class SignalingGrantRejectedException implements Exception {
+  const SignalingGrantRejectedException(this.statusCode);
+
+  final int statusCode;
+
+  @override
+  String toString() =>
+      'SignalingGrantRejectedException: HTTP $statusCode rejected the grant.';
+}
+
 abstract interface class SignalingGrantPostAdapter {
   set withCredentials(bool value);
 

@@ -1,6 +1,7 @@
 import 'package:dio/browser.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/websocket/websocket_client.dart';
 import '../../device_identity/data/device_identity_session.dart';
 import 'signaling_grant_preparer.dart';
 
@@ -10,7 +11,13 @@ SignalingGrantPreparer createPlatformSignalingGrantPreparer({
 }) {
   final browserAdapter = BrowserHttpClientAdapter();
   browserAdapter.withCredentials = true;
-  final dio = Dio()..httpClientAdapter = browserAdapter;
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: signalingConnectTimeout,
+      sendTimeout: signalingConnectTimeout,
+      receiveTimeout: signalingConnectTimeout,
+    ),
+  )..httpClientAdapter = browserAdapter;
   return WebSignalingGrantPreparer(
     apiBaseUrl: apiBaseUrl,
     deviceIdentitySession: deviceIdentitySession,

@@ -93,6 +93,36 @@ class RecordingSignalingGrantPreparer implements SignalingGrantPreparer {
   }
 }
 
+class QueuedSignalingGrantPreparer implements SignalingGrantPreparer {
+  QueuedSignalingGrantPreparer(this.results);
+
+  final List<Object?> results;
+  int calls = 0;
+
+  @override
+  Future<void> prepare(String sessionId) async {
+    calls++;
+    if (results.isEmpty) return;
+    final result = results.removeAt(0);
+    if (result != null) throw result;
+  }
+}
+
+DioException _grantHttpFailure(int statusCode) => DioException(
+  requestOptions: RequestOptions(path: '/api/signaling/grant'),
+  response: Response<void>(
+    requestOptions: RequestOptions(path: '/api/signaling/grant'),
+    statusCode: statusCode,
+  ),
+  type: DioExceptionType.badResponse,
+);
+
+DioException _grantNetworkFailure() => DioException(
+  requestOptions: RequestOptions(path: '/api/signaling/grant'),
+  type: DioExceptionType.connectionError,
+  error: const SocketException('network unavailable'),
+);
+
 class ManualTimer implements Timer {
   ManualTimer(this.delay, this._callback);
 
@@ -416,6 +446,119 @@ void main() {
     );
     expect(uris.every((uri) => !uri.toString().contains('token-abc')), isTrue);
     expect(identity.forceRefreshes, isEmpty);
+  });
+
+  for (final statusCode in [403, 410]) {
+    test('browser grant HTTP $statusCode stops without retrying', () async {
+      final timers = <ManualTimer>[];
+      final preparer = QueuedSignalingGrantPreparer([
+        _grantHttpFailure(statusCode),
+      ]);
+      var connectorCalls = 0;
+      final webSocketClient = WebSocketClient(
+        diagnosticLog: _testLog(),
+        connector: (uri, headers) async {
+          connectorCalls++;
+          return FakeWebSocketConnection();
+        },
+        scheduleTimer: (delay, callback) {
+          final timer = ManualTimer(delay, callback);
+          timers.add(timer);
+          return timer;
+        },
+      );
+      final browserClient = SignalingClient(
+        webSocketClient: webSocketClient,
+        deviceIdentitySession: identity,
+        diagnosticLog: _testLog(),
+        authenticationPolicy:
+            SignalingAuthenticationPolicy.browserCookieGrant,
+        signalingGrantPreparer: preparer,
+      );
+      addTearDown(browserClient.dispose);
+
+      await browserClient.connect(session: session);
+
+      expect(preparer.calls, 1);
+      expect(connectorCalls, 0);
+      expect(timers, isEmpty);
+    });
+  }
+
+  test('browser grant HTTP 429 retries and then connects', () async {
+    final timers = <ManualTimer>[];
+    final preparer = QueuedSignalingGrantPreparer([
+      _grantHttpFailure(429),
+      null,
+    ]);
+    var connectorCalls = 0;
+    final webSocketClient = WebSocketClient(
+      diagnosticLog: _testLog(),
+      connector: (uri, headers) async {
+        connectorCalls++;
+        return FakeWebSocketConnection();
+      },
+      scheduleTimer: (delay, callback) {
+        final timer = ManualTimer(delay, callback);
+        timers.add(timer);
+        return timer;
+      },
+    );
+    final browserClient = SignalingClient(
+      webSocketClient: webSocketClient,
+      deviceIdentitySession: identity,
+      diagnosticLog: _testLog(),
+      authenticationPolicy:
+          SignalingAuthenticationPolicy.browserCookieGrant,
+      signalingGrantPreparer: preparer,
+    );
+    addTearDown(browserClient.dispose);
+
+    await browserClient.connect(session: session);
+    timers.single.fire();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(preparer.calls, 2);
+    expect(connectorCalls, 1);
+  });
+
+  test('browser grant network failure retries and then connects', () async {
+    final timers = <ManualTimer>[];
+    final preparer = QueuedSignalingGrantPreparer([
+      _grantNetworkFailure(),
+      null,
+    ]);
+    var connectorCalls = 0;
+    final webSocketClient = WebSocketClient(
+      diagnosticLog: _testLog(),
+      connector: (uri, headers) async {
+        connectorCalls++;
+        return FakeWebSocketConnection();
+      },
+      scheduleTimer: (delay, callback) {
+        final timer = ManualTimer(delay, callback);
+        timers.add(timer);
+        return timer;
+      },
+    );
+    final browserClient = SignalingClient(
+      webSocketClient: webSocketClient,
+      deviceIdentitySession: identity,
+      diagnosticLog: _testLog(),
+      authenticationPolicy:
+          SignalingAuthenticationPolicy.browserCookieGrant,
+      signalingGrantPreparer: preparer,
+    );
+    addTearDown(browserClient.dispose);
+
+    await browserClient.connect(session: session);
+    timers.single.fire();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(preparer.calls, 2);
+    expect(connectorCalls, 1);
   });
 
   test('transient token failure retries and then connects', () async {

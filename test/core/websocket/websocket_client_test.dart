@@ -671,6 +671,40 @@ void main() {
       expect(connectorCalls, 0);
     });
 
+    test('beforeConnect timeout enters backoff without invoking connector',
+        () async {
+      final timers = <ManualTimer>[];
+      final states = <WebSocketConnectionState>[];
+      final pending = Completer<void>();
+      var connectorCalls = 0;
+      final client = WebSocketClient(
+        diagnosticLog: _testLog(),
+        connector: (uri, headers) async {
+          connectorCalls++;
+          return FakeWebSocketConnection();
+        },
+        beforeConnectTimeout: Duration.zero,
+        scheduleTimer: (delay, callback) {
+          final timer = ManualTimer(delay, callback);
+          timers.add(timer);
+          return timer;
+        },
+      );
+      addTearDown(client.dispose);
+      final subscription = client.connectionState.listen(states.add);
+      addTearDown(subscription.cancel);
+
+      await client.connect(
+        Uri.parse('wss://example.test/ws'),
+        beforeConnect: (_) => pending.future,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(connectorCalls, 0);
+      expect(timers, hasLength(1));
+      expect(states, contains(WebSocketConnectionState.reconnecting));
+    });
+
     test('disconnect stops reconnect attempts', () async {
       final connections = <FakeWebSocketConnection>[];
       final client = WebSocketClient(
