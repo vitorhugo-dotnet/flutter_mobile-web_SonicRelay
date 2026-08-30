@@ -43,6 +43,11 @@ abstract class DiagnosticLog {
 
   List<DiagnosticEvent> get recentEvents => List.unmodifiable(_recentEvents);
 
+  /// A stable oldest-first view for subclasses that serialize retained events.
+  /// Events are already redacted before entering this bounded buffer.
+  List<DiagnosticEvent> get recentEventsForExport =>
+      List.unmodifiable(_recentEvents);
+
   Future<void> write(
     String category,
     String message, [

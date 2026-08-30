@@ -1,10 +1,35 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sonic_relay/core/diagnostics/diagnostic_log.dart';
 import 'package:sonic_relay/core/diagnostics/in_memory_diagnostic_log.dart';
+
+class _RecordingDiagnosticDownloader implements DiagnosticDownloader {
+  var calls = 0;
+  late String filename;
+  late String contents;
+  late String mimeType;
+
+  @override
+  void download({
+    required String filename,
+    required String contents,
+    required String mimeType,
+  }) {
+    calls += 1;
+    this.filename = filename;
+    this.contents = contents;
+    this.mimeType = mimeType;
+  }
+}
+
+InMemoryDiagnosticLog _newLog() =>
+    InMemoryDiagnosticLog(downloader: _RecordingDiagnosticDownloader());
 
 void main() {
   group('InMemoryDiagnosticLog', () {
     test('keeps redacted events readable for the life of the tab', () async {
-      final log = InMemoryDiagnosticLog();
+      final log = _newLog();
 
       await log.write('Signaling', 'connected');
 
@@ -14,7 +39,7 @@ void main() {
     });
 
     test('redacts sensitive properties like the file-backed log', () async {
-      final log = InMemoryDiagnosticLog();
+      final log = _newLog();
 
       await log.write('Device', 'bootstrapped', {'token': 'super-secret'});
 
@@ -22,7 +47,7 @@ void main() {
     });
 
     test('clear empties the buffer', () async {
-      final log = InMemoryDiagnosticLog();
+      final log = _newLog();
       await log.write('Signaling', 'connected');
 
       await log.clear();
@@ -30,21 +55,28 @@ void main() {
       expect(log.recentEvents, isEmpty);
     });
 
-    // The settings screen already renders any export failure as a message, so
-    // refusing here is better than inventing a file the browser cannot share.
-    test('export refuses rather than fabricating a file path', () async {
-      final log = InMemoryDiagnosticLog();
+    test('downloads redacted events as chronological JSONL', () async {
+      final downloader = _RecordingDiagnosticDownloader();
+      final log = InMemoryDiagnosticLog(downloader: downloader);
+      await log.write('Signaling', 'connected');
+      await log.write('Device', 'bootstrapped', {'token': 'super-secret'});
 
-      await expectLater(log.export(), throwsA(isA<UnsupportedError>()));
-    });
+      final result = await log.export();
 
-    test('a refused export does not wedge the write queue', () async {
-      final log = InMemoryDiagnosticLog();
+      expect(result, isA<DiagnosticDownloadExport>());
+      expect(downloader.calls, 1);
+      expect(
+        downloader.filename,
+        matches(r'^sonicrelay-diagnostics-.*\.jsonl$'),
+      );
+      expect(downloader.mimeType, 'application/x-ndjson;charset=utf-8');
+      expect(downloader.contents, endsWith('\n'));
+      expect(downloader.contents, isNot(contains('super-secret')));
 
-      await expectLater(log.export(), throwsA(isA<UnsupportedError>()));
-      await log.write('Signaling', 'still writing');
-
-      expect(log.recentEvents, hasLength(1));
+      final lines = downloader.contents.trimRight().split('\n');
+      expect(lines, hasLength(2));
+      expect(jsonDecode(lines[0])['category'], 'Signaling');
+      expect(jsonDecode(lines[1])['properties']['token'], '[REDACTED]');
     });
   });
 }
