@@ -42,6 +42,8 @@ import '../../features/sessions/data/sessions_repository.dart';
 import '../../features/listener/data/audio_receiver_service.dart';
 import '../../features/listener/data/webrtc_receiver_service.dart';
 import '../../features/signaling/data/signaling_client.dart';
+import '../../features/signaling/data/signaling_grant_preparer.dart';
+import '../../features/signaling/data/platform_signaling_grant_preparer.dart';
 import '../env/app_config.dart';
 
 final secureStorageProvider = Provider<FlutterSecureStorage>(
@@ -562,6 +564,13 @@ final signalingClientProvider = Provider<SignalingClient>(
     deviceIdentitySession: ref.watch(deviceIdentitySessionProvider),
     diagnosticLog: ref.watch(diagnosticLogProvider),
     networkMonitor: ref.watch(networkMonitorProvider),
+  ),
+);
+
+final signalingGrantPreparerProvider = Provider<SignalingGrantPreparer>(
+  (ref) => createPlatformSignalingGrantPreparer(
+    apiBaseUrl: Uri.parse(ref.watch(appConfigProvider).apiBaseUrl),
+    deviceIdentitySession: ref.watch(deviceIdentitySessionProvider),
   ),
 );
 
