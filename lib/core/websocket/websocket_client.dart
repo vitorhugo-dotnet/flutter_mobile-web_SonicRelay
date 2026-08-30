@@ -39,6 +39,10 @@ typedef WebSocketConnector =
 typedef WebSocketHeadersProvider =
     Future<Map<String, String>> Function(bool isReconnect);
 
+/// Performs per-attempt work immediately before headers are resolved and the
+/// connector is invoked.
+typedef WebSocketBeforeConnect = Future<void> Function(bool isReconnect);
+
 /// Decides whether a connect failure should be retried. Returning false
 /// stops all further reconnect attempts (e.g. when the device identity has
 /// been revoked and retrying would never succeed).
@@ -176,12 +180,14 @@ class WebSocketClient {
   bool _stopped = true;
   Uri? _uri;
   Map<String, String> _headers = const {};
+  WebSocketBeforeConnect? _beforeConnect;
   WebSocketHeadersProvider? _headersProvider;
   WebSocketReconnectPredicate _shouldReconnectOnError = (_) => true;
 
   Future<void> connect(
     Uri uri, {
     Map<String, String> headers = const {},
+    WebSocketBeforeConnect? beforeConnect,
     WebSocketHeadersProvider? headersProvider,
     WebSocketReconnectPredicate? shouldReconnectOnError,
   }) async {
@@ -205,6 +211,7 @@ class WebSocketClient {
 
     _uri = uri;
     _headers = headers;
+    _beforeConnect = beforeConnect;
     _headersProvider = headersProvider;
     _shouldReconnectOnError = shouldReconnectOnError ?? (_) => true;
     _attempt = 0;
@@ -254,6 +261,8 @@ class WebSocketClient {
           'connecting to $uri (attempt $_attempt)',
         ),
       );
+      await _beforeConnect?.call(isReconnect);
+      if (!_isCurrent(generation)) return;
       final headersProvider = _headersProvider;
       final headers = headersProvider == null
           ? _headers

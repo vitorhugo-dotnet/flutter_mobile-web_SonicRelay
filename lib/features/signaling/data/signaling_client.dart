@@ -9,7 +9,10 @@ import '../../device_identity/data/device_identity_session.dart';
 import '../../sessions/domain/stream_session.dart';
 import '../domain/signaling_message.dart';
 import '../domain/signaling_message_type.dart';
+import 'signaling_grant_preparer.dart';
 import 'signaling_message_mapper.dart';
+
+enum SignalingAuthenticationPolicy { bearerHeader, browserCookieGrant }
 
 enum SignalingConnectionState {
   connecting,
@@ -35,6 +38,9 @@ class SignalingClient {
     required WebSocketClient webSocketClient,
     required DeviceIdentitySession deviceIdentitySession,
     required DiagnosticLog diagnosticLog,
+    SignalingAuthenticationPolicy authenticationPolicy =
+        SignalingAuthenticationPolicy.bearerHeader,
+    SignalingGrantPreparer? signalingGrantPreparer,
     SignalingMessageMapper mapper = const SignalingMessageMapper(),
     NetworkMonitor networkMonitor = const NoopNetworkMonitor(),
     Duration networkStabilizationDelay = defaultNetworkStabilizationDelay,
@@ -43,6 +49,8 @@ class SignalingClient {
   }) : _webSocketClient = webSocketClient,
        _deviceIdentitySession = deviceIdentitySession,
        _diagnosticLog = diagnosticLog,
+       _authenticationPolicy = authenticationPolicy,
+       _signalingGrantPreparer = signalingGrantPreparer,
        _mapper = mapper,
        _networkStabilizationDelay = networkStabilizationDelay,
        _scheduleTimer = scheduleTimer ?? Timer.new,
@@ -57,6 +65,8 @@ class SignalingClient {
   final WebSocketClient _webSocketClient;
   final DeviceIdentitySession _deviceIdentitySession;
   final DiagnosticLog _diagnosticLog;
+  final SignalingAuthenticationPolicy _authenticationPolicy;
+  final SignalingGrantPreparer? _signalingGrantPreparer;
   final SignalingMessageMapper _mapper;
   final Duration _networkStabilizationDelay;
   final Timer Function(Duration delay, void Function() callback) _scheduleTimer;
@@ -91,12 +101,10 @@ class SignalingClient {
 
   Stream<SignalingMessage> get messages => _messageController.stream;
 
-  /// Connects to [session.signalingUrl] with only [sessionId] in the query and
-  /// the current device access token as a bearer header. The header is
-  /// resolved fresh on every (re)connect attempt, not just this initial one,
-  /// so a token that expires mid-outage is refreshed before the next retry
-  /// instead of retrying forever with a stale, now-rejected token. Retries
-  /// stop entirely if the device identity itself has been revoked.
+  /// Connects to [session.signalingUrl] with only [sessionId] in the query.
+  /// Native clients resolve a valid bearer token for every attempt; browsers
+  /// prepare a credentialed cookie grant first and open a headerless socket.
+  /// Retries stop entirely if the device identity itself has been revoked.
   Future<void> connect({required StreamSession session}) async {
     _session = session;
     _leaving = false;
@@ -107,14 +115,28 @@ class SignalingClient {
         'connect sessionId=${session.sessionId} uri=$uri',
       ),
     );
+    final usesBrowserGrant =
+        _authenticationPolicy ==
+        SignalingAuthenticationPolicy.browserCookieGrant;
     await _webSocketClient.connect(
       uri,
-      headersProvider: (isReconnect) async {
-        final token = await _deviceIdentitySession.accessToken(
-          forceRefresh: isReconnect,
-        );
-        return {'Authorization': 'Bearer $token'};
-      },
+      beforeConnect: usesBrowserGrant
+          ? (_) async {
+              final preparer = _signalingGrantPreparer;
+              if (preparer == null) {
+                throw StateError(
+                  'Browser signaling requires a grant preparer.',
+                );
+              }
+              await preparer.prepare(session.sessionId);
+            }
+          : null,
+      headersProvider: usesBrowserGrant
+          ? null
+          : (_) async {
+              final token = await _deviceIdentitySession.accessToken();
+              return {'Authorization': 'Bearer $token'};
+            },
       shouldReconnectOnError: (error) =>
           error is! DeviceIdentitySessionInvalidatedException,
     );

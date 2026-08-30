@@ -558,11 +558,20 @@ final webSocketClientProvider = Provider<WebSocketClient>(
   ),
 );
 
+final signalingAuthenticationPolicyProvider =
+    Provider<SignalingAuthenticationPolicy>(
+      (ref) => isWebHost
+          ? SignalingAuthenticationPolicy.browserCookieGrant
+          : SignalingAuthenticationPolicy.bearerHeader,
+    );
+
 final signalingClientProvider = Provider<SignalingClient>(
   (ref) => SignalingClient(
     webSocketClient: ref.watch(webSocketClientProvider),
     deviceIdentitySession: ref.watch(deviceIdentitySessionProvider),
     diagnosticLog: ref.watch(diagnosticLogProvider),
+    authenticationPolicy: ref.watch(signalingAuthenticationPolicyProvider),
+    signalingGrantPreparer: ref.watch(signalingGrantPreparerProvider),
     networkMonitor: ref.watch(networkMonitorProvider),
   ),
 );

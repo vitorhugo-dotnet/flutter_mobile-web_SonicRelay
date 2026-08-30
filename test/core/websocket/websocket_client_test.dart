@@ -599,6 +599,78 @@ void main() {
       ]);
     });
 
+    test('runs beforeConnect before headers and connector on every attempt',
+        () async {
+      final events = <String>[];
+      final connections = <FakeWebSocketConnection>[];
+      final client = WebSocketClient(
+        diagnosticLog: _testLog(),
+        connector: (uri, headers) async {
+          events.add('connector');
+          final connection = FakeWebSocketConnection();
+          connections.add(connection);
+          return connection;
+        },
+        scheduleTimer: _instantTimer,
+      );
+      addTearDown(client.dispose);
+
+      await client.connect(
+        Uri.parse('wss://example.test/ws'),
+        beforeConnect: (isReconnect) async {
+          events.add('before:$isReconnect');
+        },
+        headersProvider: (isReconnect) async {
+          events.add('headers:$isReconnect');
+          return const {};
+        },
+      );
+      connections.single.emitDone();
+      for (var i = 0; i < 6 && connections.length < 2; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(events, [
+        'before:false',
+        'headers:false',
+        'connector',
+        'before:true',
+        'headers:true',
+        'connector',
+      ]);
+    });
+
+    test('disconnect invalidates an in-flight beforeConnect operation',
+        () async {
+      final beforeConnectStarted = Completer<void>();
+      final beforeConnectResult = Completer<void>();
+      var connectorCalls = 0;
+      final client = WebSocketClient(
+        diagnosticLog: _testLog(),
+        connector: (uri, headers) async {
+          connectorCalls++;
+          return FakeWebSocketConnection();
+        },
+        scheduleTimer: _instantTimer,
+      );
+      addTearDown(client.dispose);
+
+      final connecting = client.connect(
+        Uri.parse('wss://example.test/ws'),
+        beforeConnect: (_) {
+          beforeConnectStarted.complete();
+          return beforeConnectResult.future;
+        },
+      );
+      await beforeConnectStarted.future;
+
+      await client.disconnect();
+      beforeConnectResult.complete();
+      await connecting;
+
+      expect(connectorCalls, 0);
+    });
+
     test('disconnect stops reconnect attempts', () async {
       final connections = <FakeWebSocketConnection>[];
       final client = WebSocketClient(
