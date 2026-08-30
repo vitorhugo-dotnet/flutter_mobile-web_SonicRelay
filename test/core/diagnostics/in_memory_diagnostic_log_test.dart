@@ -78,5 +78,27 @@ void main() {
       expect(jsonDecode(lines[0])['category'], 'Signaling');
       expect(jsonDecode(lines[1])['properties']['token'], '[REDACTED]');
     });
+
+    test(
+      'does not allow retained event properties to be changed before export',
+      () async {
+        final downloader = _RecordingDiagnosticDownloader();
+        final log = InMemoryDiagnosticLog(downloader: downloader);
+        await log.write('Signaling', 'connected', {'state': 'safe'});
+
+        expect(
+          () => log.recentEvents.single.properties['state'] = 'super-secret',
+          throwsUnsupportedError,
+        );
+
+        await log.export();
+
+        expect(downloader.contents, isNot(contains('super-secret')));
+        expect(
+          jsonDecode(downloader.contents.trimRight())['properties']['state'],
+          'safe',
+        );
+      },
+    );
   });
 }

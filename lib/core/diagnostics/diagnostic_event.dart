@@ -6,8 +6,8 @@ class DiagnosticEvent {
     required this.timestamp,
     required this.category,
     required this.message,
-    this.properties = const {},
-  });
+    Map<String, String> properties = const {},
+  }) : properties = Map.unmodifiable(properties);
 
   final DateTime timestamp;
   final String category;

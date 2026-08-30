@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show protected;
+
 import 'diagnostic_event.dart';
 import 'diagnostic_redactor.dart';
 
@@ -45,6 +47,7 @@ abstract class DiagnosticLog {
 
   /// A stable oldest-first view for subclasses that serialize retained events.
   /// Events are already redacted before entering this bounded buffer.
+  @protected
   List<DiagnosticEvent> get recentEventsForExport =>
       List.unmodifiable(_recentEvents);
 
