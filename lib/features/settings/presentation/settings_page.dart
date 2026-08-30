@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../app/di/app_providers.dart';
 import '../../../app/theme/app_spacing.dart';
@@ -253,14 +251,20 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
     try {
       final result = await ref.read(diagnosticLogProvider).export();
       if (!mounted) return;
-      if (!kIsWeb && result is DiagnosticFileExport) {
-        await SharePlus.instance.share(
-          ShareParams(files: [XFile(result.path)]),
+      switch (result) {
+        case DiagnosticDownloadExport():
+          setState(() => _message = 'Downloaded diagnostics log.');
+        case DiagnosticFileExport(:final path):
+          await ref.read(diagnosticFileShareProvider)(path);
+          if (!mounted) return;
+          setState(() => _message = 'Exported diagnostics log.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _message = 'Export failed: could not write the log file.',
         );
       }
-      setState(() => _message = 'Exported diagnostics log.');
-    } catch (_) {
-      setState(() => _message = 'Export failed: could not write the log file.');
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }

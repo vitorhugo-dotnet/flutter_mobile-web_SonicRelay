@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/diagnostics/diagnostic_log.dart';
@@ -60,6 +61,17 @@ final diagnosticsDirectoryProvider = Provider<String>(
 final diagnosticLogProvider = Provider<DiagnosticLog>(
   (ref) => createDiagnosticLog(ref.watch(diagnosticsDirectoryProvider)),
 );
+
+typedef DiagnosticFileShare = Future<void> Function(String path);
+
+/// Shares an exported diagnostics file on platforms where [DiagnosticLog]
+/// produces a filesystem path. This stays injectable so widget tests do not
+/// invoke share_plus platform channels.
+final diagnosticFileShareProvider = Provider<DiagnosticFileShare>((ref) {
+  return (path) async {
+    await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+  };
+});
 
 final serverConfigStorageProvider = Provider<ServerConfigStorage>(
   (ref) => ServerConfigStorage(ref.watch(secureStorageProvider)),
