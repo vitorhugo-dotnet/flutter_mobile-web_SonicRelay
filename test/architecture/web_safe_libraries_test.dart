@@ -114,7 +114,7 @@ void main() {
         .whereType<File>()
         .where((file) => file.path.endsWith('.dart'))
         .where((file) => file.readAsStringSync().contains("import 'dart:io'"))
-        .map((file) => file.path)
+        .map((file) => file.path.replaceAll(r'\', '/'))
         .toSet();
 
     expect(
