@@ -13,23 +13,9 @@ import 'websocket_client.dart';
 /// it and carry none of its weight.
 const WebSocketConnector defaultWebSocketConnector = webWebSocketConnector;
 
-/// Why the browser cannot carry the `DeviceBearer` token the way the mobile
-/// clients do, spelled out where it will be read at the point of failure.
-///
-/// `WebSocket.connect` on `dart:io` takes request headers; the browser's
-/// `WebSocket` constructor takes only a URL and a subprotocol list, and the
-/// handshake it sends cannot be given an `Authorization` header. Carrying the
-/// token in the query string is not a substitute — dotnet_SonicRelay#33
-/// requires that tokens never reach logs, and a query string reaches every
-/// access log on the path.
-///
-/// Picking the replacement (most likely `Sec-WebSocket-Protocol`) is a backend
-/// contract change in dotnet_SonicRelay, not a client-side choice, so this
-/// connector refuses rather than quietly opening an unauthenticated socket.
 const _headersUnsupportedMessage =
-    'The browser WebSocket handshake cannot carry request headers, so the '
-    'signaling token has nowhere to go yet. Carrying DeviceBearer on the web '
-    'signaling socket needs a backend contract first (dotnet_SonicRelay#33).';
+    'Browser signaling authenticates with a prepared cookie; request headers '
+    'must be empty.';
 
 /// [WebSocketConnector] backed by the browser's own `WebSocket`.
 Future<WebSocketConnection> webWebSocketConnector(

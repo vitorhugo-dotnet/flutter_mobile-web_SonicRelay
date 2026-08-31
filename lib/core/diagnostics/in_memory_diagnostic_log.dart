@@ -1,6 +1,14 @@
 import 'diagnostic_event.dart';
 import 'diagnostic_log.dart';
 
+abstract interface class DiagnosticDownloader {
+  void download({
+    required String filename,
+    required String contents,
+    required String mimeType,
+  });
+}
+
 /// [DiagnosticLog] for the browser: the shared ring buffer and nothing else.
 ///
 /// The web publisher is deliberately session-scoped — dotnet_SonicRelay#33
@@ -9,6 +17,11 @@ import 'diagnostic_log.dart';
 /// that keeps the credential out of `localStorage`. Diagnostics stay readable
 /// on the settings screen for the life of the tab, and go no further.
 class InMemoryDiagnosticLog extends DiagnosticLog {
+  InMemoryDiagnosticLog({required DiagnosticDownloader downloader})
+    : _downloader = downloader;
+
+  final DiagnosticDownloader _downloader;
+
   @override
   Future<void> persistEvent(DiagnosticEvent event) async {}
 
@@ -16,8 +29,17 @@ class InMemoryDiagnosticLog extends DiagnosticLog {
   Future<void> deletePersistedEvents() async {}
 
   @override
-  Future<String> exportPersistedEvents() async => throw UnsupportedError(
-    'Diagnostics are kept in memory in the browser and cannot be exported to '
-    'a file. Read them on the settings screen instead.',
-  );
+  Future<DiagnosticExportResult> exportPersistedEvents() async {
+    final contents = recentEventsForExport
+        .map((event) => event.encode())
+        .join('\n');
+    final filename =
+        'sonicrelay-diagnostics-${DateTime.now().toUtc().toIso8601String()}.jsonl';
+    _downloader.download(
+      filename: filename,
+      contents: contents.isEmpty ? '' : '$contents\n',
+      mimeType: 'application/x-ndjson;charset=utf-8',
+    );
+    return DiagnosticDownloadExport(filename);
+  }
 }

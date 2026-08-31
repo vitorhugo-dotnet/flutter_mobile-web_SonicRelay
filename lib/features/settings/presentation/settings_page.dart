@@ -1,13 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../app/di/app_providers.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../core/diagnostics/diagnostic_log.dart';
 import '../../../core/widgets/sonic_button.dart';
 import '../../../core/widgets/sonic_card.dart';
 import '../../support/presentation/widgets/support_project_card.dart';
@@ -250,14 +249,22 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
       _message = null;
     });
     try {
-      final path = await ref.read(diagnosticLogProvider).export();
+      final result = await ref.read(diagnosticLogProvider).export();
       if (!mounted) return;
-      if (!kIsWeb) {
-        await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+      switch (result) {
+        case DiagnosticDownloadExport():
+          setState(() => _message = 'Downloaded diagnostics log.');
+        case DiagnosticFileExport(:final path):
+          await ref.read(diagnosticFileShareProvider)(path);
+          if (!mounted) return;
+          setState(() => _message = 'Exported diagnostics log.');
       }
-      setState(() => _message = 'Exported diagnostics log.');
     } catch (_) {
-      setState(() => _message = 'Export failed: could not write the log file.');
+      if (mounted) {
+        setState(
+          () => _message = 'Export failed: could not write the log file.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }

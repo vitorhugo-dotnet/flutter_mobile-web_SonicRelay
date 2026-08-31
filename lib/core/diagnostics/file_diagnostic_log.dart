@@ -35,7 +35,7 @@ class FileDiagnosticLog extends DiagnosticLog {
   }
 
   @override
-  Future<String> exportPersistedEvents() async {
+  Future<DiagnosticExportResult> exportPersistedEvents() async {
     final exportDir = Directory('$_directory/exports');
     await exportDir.create(recursive: true);
     final exportPath = '${exportDir.path}/sonicrelay-logs-${_timestampStamp()}.jsonl';
@@ -48,7 +48,7 @@ class FileDiagnosticLog extends DiagnosticLog {
     } finally {
       await output.close();
     }
-    return exportPath;
+    return DiagnosticFileExport(exportPath);
   }
 
   void _deleteExpiredFiles(Duration retention) {

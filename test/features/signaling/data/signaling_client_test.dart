@@ -18,6 +18,7 @@ import 'package:sonic_relay/features/device_identity/data/dto/device_token_respo
 import 'package:sonic_relay/features/device_identity/domain/device_credential.dart';
 import 'package:sonic_relay/features/sessions/domain/stream_session.dart';
 import 'package:sonic_relay/features/signaling/data/signaling_client.dart';
+import 'package:sonic_relay/features/signaling/data/signaling_grant_preparer.dart';
 import 'package:sonic_relay/features/signaling/domain/signaling_message_type.dart';
 
 DiagnosticLog _testLog() =>
@@ -78,6 +79,49 @@ class SupersededDeviceIdentitySession implements DeviceIdentitySession {
   @override
   Future<void> reset() async {}
 }
+
+class RecordingSignalingGrantPreparer implements SignalingGrantPreparer {
+  RecordingSignalingGrantPreparer(this.events);
+
+  final List<String> events;
+  final List<String> sessionIds = [];
+
+  @override
+  Future<void> prepare(String sessionId) async {
+    sessionIds.add(sessionId);
+    events.add('prepare');
+  }
+}
+
+class QueuedSignalingGrantPreparer implements SignalingGrantPreparer {
+  QueuedSignalingGrantPreparer(this.results);
+
+  final List<Object?> results;
+  int calls = 0;
+
+  @override
+  Future<void> prepare(String sessionId) async {
+    calls++;
+    if (results.isEmpty) return;
+    final result = results.removeAt(0);
+    if (result != null) throw result;
+  }
+}
+
+DioException _grantHttpFailure(int statusCode) => DioException(
+  requestOptions: RequestOptions(path: '/api/signaling/grant'),
+  response: Response<void>(
+    requestOptions: RequestOptions(path: '/api/signaling/grant'),
+    statusCode: statusCode,
+  ),
+  type: DioExceptionType.badResponse,
+);
+
+DioException _grantNetworkFailure() => DioException(
+  requestOptions: RequestOptions(path: '/api/signaling/grant'),
+  type: DioExceptionType.connectionError,
+  error: const SocketException('network unavailable'),
+);
 
 class ManualTimer implements Timer {
   ManualTimer(this.delay, this._callback);
@@ -339,7 +383,7 @@ void main() {
     expect(requestedHeaders.single['Authorization'], 'Bearer token-abc');
   });
 
-  test('reconnect obtains a fresh Bearer token', () async {
+  test('IO reconnect reuses a valid Bearer token without forcing refresh', () async {
     await signalingClient.connect(session: session);
     await Future<void>.delayed(Duration.zero);
     identity.token = 'token-2';
@@ -352,7 +396,169 @@ void main() {
     expect(requestedHeaders, hasLength(2));
     expect(requestedHeaders[0]['Authorization'], 'Bearer token-abc');
     expect(requestedHeaders[1]['Authorization'], 'Bearer token-2');
-    expect(identity.forceRefreshes, [false, true]);
+    expect(identity.forceRefreshes, [false, false]);
+  });
+
+  test('browser prepares its cookie before every headerless socket attempt',
+      () async {
+    final events = <String>[];
+    final preparer = RecordingSignalingGrantPreparer(events);
+    final uris = <Uri>[];
+    final headersSeen = <Map<String, String>>[];
+    final connections = <FakeWebSocketConnection>[];
+    final webSocketClient = WebSocketClient(
+      diagnosticLog: _testLog(),
+      connector: (uri, headers) async {
+        events.add('connector');
+        uris.add(uri);
+        headersSeen.add(headers);
+        final connection = FakeWebSocketConnection();
+        connections.add(connection);
+        return connection;
+      },
+      scheduleTimer: _instantTimer,
+    );
+    final browserClient = SignalingClient(
+      webSocketClient: webSocketClient,
+      deviceIdentitySession: identity,
+      diagnosticLog: _testLog(),
+      authenticationPolicy:
+          SignalingAuthenticationPolicy.browserCookieGrant,
+      signalingGrantPreparer: preparer,
+    );
+    addTearDown(browserClient.dispose);
+
+    await browserClient.connect(session: session);
+    await connections.single.close();
+    for (var i = 0; i < 6 && connections.length < 2; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(events, ['prepare', 'connector', 'prepare', 'connector']);
+    expect(preparer.sessionIds, ['session-1', 'session-1']);
+    expect(headersSeen, [isEmpty, isEmpty]);
+    expect(
+      uris.map((uri) => uri.queryParameters),
+      [
+        {'sessionId': 'session-1'},
+        {'sessionId': 'session-1'},
+      ],
+    );
+    expect(uris.every((uri) => !uri.toString().contains('token-abc')), isTrue);
+    expect(identity.forceRefreshes, isEmpty);
+  });
+
+  for (final statusCode in [403, 410]) {
+    test('browser grant HTTP $statusCode stops without retrying', () async {
+      final timers = <ManualTimer>[];
+      final preparer = QueuedSignalingGrantPreparer([
+        _grantHttpFailure(statusCode),
+      ]);
+      var connectorCalls = 0;
+      final webSocketClient = WebSocketClient(
+        diagnosticLog: _testLog(),
+        connector: (uri, headers) async {
+          connectorCalls++;
+          return FakeWebSocketConnection();
+        },
+        scheduleTimer: (delay, callback) {
+          final timer = ManualTimer(delay, callback);
+          timers.add(timer);
+          return timer;
+        },
+      );
+      final browserClient = SignalingClient(
+        webSocketClient: webSocketClient,
+        deviceIdentitySession: identity,
+        diagnosticLog: _testLog(),
+        authenticationPolicy:
+            SignalingAuthenticationPolicy.browserCookieGrant,
+        signalingGrantPreparer: preparer,
+      );
+      addTearDown(browserClient.dispose);
+
+      await browserClient.connect(session: session);
+
+      expect(preparer.calls, 1);
+      expect(connectorCalls, 0);
+      expect(timers, isEmpty);
+    });
+  }
+
+  test('browser grant HTTP 429 retries and then connects', () async {
+    final timers = <ManualTimer>[];
+    final preparer = QueuedSignalingGrantPreparer([
+      _grantHttpFailure(429),
+      null,
+    ]);
+    var connectorCalls = 0;
+    final webSocketClient = WebSocketClient(
+      diagnosticLog: _testLog(),
+      connector: (uri, headers) async {
+        connectorCalls++;
+        return FakeWebSocketConnection();
+      },
+      scheduleTimer: (delay, callback) {
+        final timer = ManualTimer(delay, callback);
+        timers.add(timer);
+        return timer;
+      },
+    );
+    final browserClient = SignalingClient(
+      webSocketClient: webSocketClient,
+      deviceIdentitySession: identity,
+      diagnosticLog: _testLog(),
+      authenticationPolicy:
+          SignalingAuthenticationPolicy.browserCookieGrant,
+      signalingGrantPreparer: preparer,
+    );
+    addTearDown(browserClient.dispose);
+
+    await browserClient.connect(session: session);
+    timers.single.fire();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(preparer.calls, 2);
+    expect(connectorCalls, 1);
+  });
+
+  test('browser grant network failure retries and then connects', () async {
+    final timers = <ManualTimer>[];
+    final preparer = QueuedSignalingGrantPreparer([
+      _grantNetworkFailure(),
+      null,
+    ]);
+    var connectorCalls = 0;
+    final webSocketClient = WebSocketClient(
+      diagnosticLog: _testLog(),
+      connector: (uri, headers) async {
+        connectorCalls++;
+        return FakeWebSocketConnection();
+      },
+      scheduleTimer: (delay, callback) {
+        final timer = ManualTimer(delay, callback);
+        timers.add(timer);
+        return timer;
+      },
+    );
+    final browserClient = SignalingClient(
+      webSocketClient: webSocketClient,
+      deviceIdentitySession: identity,
+      diagnosticLog: _testLog(),
+      authenticationPolicy:
+          SignalingAuthenticationPolicy.browserCookieGrant,
+      signalingGrantPreparer: preparer,
+    );
+    addTearDown(browserClient.dispose);
+
+    await browserClient.connect(session: session);
+    timers.single.fire();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(preparer.calls, 2);
+    expect(connectorCalls, 1);
   });
 
   test('transient token failure retries and then connects', () async {
@@ -364,7 +570,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
     }
 
-    expect(identity.forceRefreshes, [false, true]);
+    expect(identity.forceRefreshes, [false, false]);
     expect(requestedHeaders.single['Authorization'], 'Bearer token-2');
   });
 
@@ -446,14 +652,14 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(connectorCalls, 1);
-      expect(localIdentity.forceRefreshes, [false, true]);
+      expect(localIdentity.forceRefreshes, [false, false]);
       expect(timers, hasLength(1));
       expect(states.last, SignalingConnectionState.disconnected);
     },
   );
 
   test(
-    'revocation cleanup failure still publishes once and stops reconnecting',
+    'expired-token revocation still publishes once and stops reconnecting',
     () async {
       final timers = <ManualTimer>[];
       final localApi = _RevocableDeviceIdentityApi();
@@ -663,7 +869,9 @@ class _RevocableDeviceIdentityApi implements DeviceIdentityApi {
     }
     return DeviceTokenResponse(
       accessToken: 'device-token',
-      expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+      // Inside the session's refresh margin, so an ordinary reconnect refreshes
+      // naturally without forcing a still-valid token refresh.
+      expiresAt: DateTime.now().toUtc().add(const Duration(seconds: 1)),
       scopes: const ['stream:listen'],
     );
   }
