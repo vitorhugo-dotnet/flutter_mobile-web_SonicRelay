@@ -71,12 +71,27 @@ void main() {
       );
       expect(downloader.mimeType, 'application/x-ndjson;charset=utf-8');
       expect(downloader.contents, endsWith('\n'));
+      expect(downloader.contents, isNot(endsWith('\n\n')));
       expect(downloader.contents, isNot(contains('super-secret')));
 
-      final lines = downloader.contents.trimRight().split('\n');
-      expect(lines, hasLength(2));
+      final lines = downloader.contents.split('\n');
+      expect(lines, hasLength(3));
+      expect(lines.last, isEmpty);
       expect(jsonDecode(lines[0])['category'], 'Signaling');
+      expect(jsonDecode(lines[0])['message'], 'connected');
+      expect(jsonDecode(lines[1])['category'], 'Device');
+      expect(jsonDecode(lines[1])['message'], 'bootstrapped');
       expect(jsonDecode(lines[1])['properties']['token'], '[REDACTED]');
+    });
+
+    test('downloads an empty export without a trailing newline', () async {
+      final downloader = _RecordingDiagnosticDownloader();
+      final log = InMemoryDiagnosticLog(downloader: downloader);
+
+      await log.export();
+
+      expect(downloader.calls, 1);
+      expect(downloader.contents, isEmpty);
     });
 
     test(

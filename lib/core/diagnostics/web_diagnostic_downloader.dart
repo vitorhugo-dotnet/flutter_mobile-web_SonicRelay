@@ -12,22 +12,35 @@ class WebDiagnosticDownloader implements DiagnosticDownloader {
     required String contents,
     required String mimeType,
   }) {
-    final blob = web.Blob(
-      [contents.toJS].toJS,
-      web.BlobPropertyBag(type: mimeType),
-    );
-    final objectUrl = web.URL.createObjectURL(blob);
-    final anchor = web.HTMLAnchorElement()
-      ..href = objectUrl
-      ..download = filename
-      ..style.display = 'none';
+    String? objectUrl;
+    web.HTMLAnchorElement? anchor;
+    var anchorAttached = false;
 
     try {
-      web.document.body?.append(anchor);
-      anchor.click();
+      final blob = web.Blob(
+        [contents.toJS].toJS,
+        web.BlobPropertyBag(type: mimeType),
+      );
+      final url = web.URL.createObjectURL(blob);
+      objectUrl = url;
+      final downloadAnchor = web.HTMLAnchorElement()
+        ..href = url
+        ..download = filename
+        ..style.display = 'none';
+      anchor = downloadAnchor;
+
+      final body = web.document.body;
+      if (body == null) {
+        throw StateError(
+          'Cannot start a browser download without a document body.',
+        );
+      }
+      body.append(downloadAnchor);
+      anchorAttached = true;
+      downloadAnchor.click();
     } finally {
-      anchor.remove();
-      web.URL.revokeObjectURL(objectUrl);
+      if (anchorAttached) anchor!.remove();
+      if (objectUrl != null) web.URL.revokeObjectURL(objectUrl);
     }
   }
 }
