@@ -1,15 +1,15 @@
 # Google Play CI/CD
 
-This repository publishes the Android Flutter app to the Google Play **internal testing** track through `.github/workflows/android-play-deploy.yml`.
+This repository publishes the Android Flutter app to the Google Play **open testing** track (`beta`) through `.github/workflows/android-play-deploy.yml`.
 
 ## Workflow behavior
 
-- `push` with a tag matching `v*` builds a signed Android App Bundle and uploads it to the `internal` Google Play track.
-- `workflow_dispatch` manually builds and uploads the signed AAB to the same `internal` track.
+- `push` with a tag matching `v*` builds a signed Android App Bundle and uploads it to the `beta` Google Play track.
+- `workflow_dispatch` manually builds and uploads the signed AAB to the same `beta` track.
 - The workflow builds `build/app/outputs/bundle/release/app-release.aab` with `flutter build appbundle --release`.
 - The Android `versionCode` is overridden with `github.run_number`, keeping Play uploads unique across CI runs.
 - Metadata, images, screenshots, and changelogs are intentionally skipped. The workflow uploads only the binary.
-- The workflow intentionally does not expose `alpha`, `beta`, or `production` as manual options.
+- The deployment track is intentionally fixed to `beta`; `alpha`, `internal`, and `production` are not exposed as manual options.
 
 ## Required GitHub Actions secrets
 
@@ -46,11 +46,11 @@ base64 -w 0 android/upload-keystore.jks
 5. Link/grant that service account access in Play Console with release permissions for this app.
 6. Add the JSON content as `PLAY_SERVICE_ACCOUNT_JSON` in GitHub Actions secrets.
 7. Ensure the package name is `com.vitorhugo.sonicrelay.sonic_relay`.
-8. Create/configure the internal testing track and tester list in Play Console.
+8. Create/configure the Open testing track in Play Console and its tester/feedback settings.
 
 ## Safety notes
 
 - Do not commit `android/key.properties`, `.jks`, or `.keystore` files.
 - The default CI workflow can still build without signing secrets because `android/app/build.gradle.kts` falls back to the debug signing config when `android/key.properties` is missing.
 - The Play deploy workflow fails early if any required secret is missing.
-- To publish outside internal testing later, add a separate workflow or PR instead of changing this one silently.
+- To publish outside Open testing later, add a separate workflow or PR instead of changing this one silently.
