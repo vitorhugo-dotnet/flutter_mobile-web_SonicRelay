@@ -41,11 +41,11 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.47.0"
   ANDROID_PACKAGE_NAME: "com.vitorhugo.sonicrelay.sonic_relay"
-  PLAY_TRACK: "internal"
+  PLAY_TRACK: "beta"
 
 jobs:
   deploy-google-play:
-    name: Deploy signed AAB to Google Play internal testing
+    name: Deploy signed AAB to Google Play open testing (Beta)
     runs-on: ubuntu-latest
 
     steps:
@@ -207,7 +207,7 @@ jobs:
           gem install fastlane --user-install --no-document
           echo "$(ruby -e 'print Gem.user_dir')/bin" >> "$GITHUB_PATH"
 
-      - name: Upload to Google Play internal testing
+      - name: Upload to Google Play open testing (Beta)
         run: |
           fastlane supply \
             --aab build/app/outputs/bundle/playRelease/app-play-release.aab \
