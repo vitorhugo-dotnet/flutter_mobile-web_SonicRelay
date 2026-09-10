@@ -494,7 +494,7 @@ jobs:
             dist/sonic-relay-x86_64-fdroid-${{ needs.version.outputs.tag }}.apk
 
   deploy-play:
-    name: Deploy Google Play internal testing
+    name: Deploy Google Play open testing (Beta)
     needs: [version, release]
     if: needs.version.outputs.should_release == 'true'
     uses: ./.github/workflows/android-play-deploy.yml
