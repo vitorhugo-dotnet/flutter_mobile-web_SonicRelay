@@ -17,6 +17,12 @@ class FakeRtcMediaStream implements RtcMediaStream {
   final String id;
 
   @override
+  Future<void> attachAudioOutput() async {}
+
+  @override
+  Future<void> detachAudioOutput() async {}
+
+  @override
   Future<void> setAudioEnabled(bool enabled) async {}
 }
 
@@ -89,12 +95,16 @@ class FakeRtcPeerConnectionFactory implements RtcPeerConnectionFactory {
 class FakeAudioReceiverService implements AudioReceiverService {
   final List<RtcMediaStream> played = [];
   int stopCount = 0;
+  Object? playError;
 
   @override
   bool get isPlaying => played.isNotEmpty && stopCount == 0;
 
   @override
-  Future<void> play(RtcMediaStream stream) async => played.add(stream);
+  Future<void> play(RtcMediaStream stream) async {
+    if (playError case final error?) throw error;
+    played.add(stream);
+  }
 
   @override
   Future<void> stop() async => stopCount++;
@@ -116,7 +126,6 @@ SignalingMessage _message(
 }
 
 void main() {
-
   group('viewer.ready offer deadline', () {
     late FakeRtcPeerConnectionFactory watchdogFactory;
     late FakeAudioReceiverService watchdogAudio;
@@ -177,20 +186,22 @@ void main() {
       expect(outbound.last.to, 'publisher-1');
     });
 
-    test('escalates to reopening signaling after the retries are spent',
-        () async {
-      await announce();
+    test(
+      'escalates to reopening signaling after the retries are spent',
+      () async {
+        await announce();
 
-      await elapse();
-      await elapse();
-      expect(outbound, hasLength(3), reason: 'initial send plus two retries');
-      expect(rejoins, 0);
+        await elapse();
+        await elapse();
+        expect(outbound, hasLength(3), reason: 'initial send plus two retries');
+        expect(rejoins, 0);
 
-      await elapse();
+        await elapse();
 
-      expect(rejoins, 1);
-      expect(outbound, hasLength(3), reason: 'no further viewer.ready spam');
-    });
+        expect(rejoins, 1);
+        expect(outbound, hasLength(3), reason: 'no further viewer.ready spam');
+      },
+    );
 
     test('stops escalating instead of looping on reopens', () async {
       await announce();
@@ -219,8 +230,11 @@ void main() {
 
       await elapse();
 
-      expect(outbound, hasLength(afterOffer),
-          reason: 'the answered request must not be retried');
+      expect(
+        outbound,
+        hasLength(afterOffer),
+        reason: 'the answered request must not be retried',
+      );
       expect(rejoins, 0);
     });
 
@@ -241,25 +255,29 @@ void main() {
       expect(rejoins, 2);
     });
 
-    test('participant_not_found drops the deadline instead of retrying',
-        () async {
-      await announce();
-      expect(outbound, hasLength(1));
+    test(
+      'participant_not_found drops the deadline instead of retrying',
+      () async {
+        await announce();
+        expect(outbound, hasLength(1));
 
-      await watchdog.handleSignal(
-        _message(
-          SignalingMessageType.error,
-          payload: const {'code': 'participant_not_found'},
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-      await elapse();
+        await watchdog.handleSignal(
+          _message(
+            SignalingMessageType.error,
+            payload: const {'code': 'participant_not_found'},
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await elapse();
 
-      expect(outbound, hasLength(1),
+        expect(
+          outbound,
+          hasLength(1),
           reason: 'a publisher that is not connected cannot answer',
-      );
-      expect(rejoins, 0);
-    });
+        );
+        expect(rejoins, 0);
+      },
+    );
 
     test('an unrelated error leaves the deadline armed', () async {
       await announce();
@@ -341,28 +359,25 @@ void main() {
     },
   );
 
-  test(
-    'participant.reconnected from another participant is ignored',
-    () async {
-      await service.handleSignal(
-        _message(SignalingMessageType.publisherReady, from: 'publisher-1'),
-      );
-      await Future<void>.delayed(Duration.zero);
+  test('participant.reconnected from another participant is ignored', () async {
+    await service.handleSignal(
+      _message(SignalingMessageType.publisherReady, from: 'publisher-1'),
+    );
+    await Future<void>.delayed(Duration.zero);
 
-      final outbound = <OutboundSignal>[];
-      service.outboundSignals.listen(outbound.add);
+    final outbound = <OutboundSignal>[];
+    service.outboundSignals.listen(outbound.add);
 
-      await service.handleSignal(
-        _message(
-          SignalingMessageType.participantReconnected,
-          from: 'some-other-viewer',
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
+    await service.handleSignal(
+      _message(
+        SignalingMessageType.participantReconnected,
+        from: 'some-other-viewer',
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
 
-      expect(outbound, isEmpty);
-    },
-  );
+    expect(outbound, isEmpty);
+  });
 
   test(
     'participant.reconnected before any publisher is known is ignored',
@@ -472,10 +487,7 @@ void main() {
 
     expect(resolverCalls, 1);
     expect(factory.iceConfigs.single, same(resolved));
-    expect(
-      factory.iceConfigs.single.iceServers.single.credential,
-      'secret',
-    );
+    expect(factory.iceConfigs.single.iceServers.single.credential, 'secret');
   });
 
   test('forceRelay makes the negotiation use relay-only ICE', () async {
@@ -499,28 +511,31 @@ void main() {
     expect(config.toConfiguration()['iceTransportPolicy'], 'relay');
   });
 
-  test('offer sets remote description, answers, and emits webrtc.answer', () async {
-    final outbound = <OutboundSignal>[];
-    service.outboundSignals.listen(outbound.add);
+  test(
+    'offer sets remote description, answers, and emits webrtc.answer',
+    () async {
+      final outbound = <OutboundSignal>[];
+      service.outboundSignals.listen(outbound.add);
 
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        from: 'publisher-1',
-        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
-      ),
-    );
-    await Future<void>.delayed(Duration.zero);
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          from: 'publisher-1',
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
 
-    final connection = factory.created.single;
-    expect(connection.remoteDescription?.sdp, 'offer-sdp');
-    expect(connection.localDescription?.sdp, 'answer-sdp');
+      final connection = factory.created.single;
+      expect(connection.remoteDescription?.sdp, 'offer-sdp');
+      expect(connection.localDescription?.sdp, 'answer-sdp');
 
-    final answer = outbound.single;
-    expect(answer.type, SignalingMessageType.webrtcAnswer);
-    expect(answer.payload['sdp'], 'answer-sdp');
-    expect(answer.to, 'publisher-1');
-  });
+      final answer = outbound.single;
+      expect(answer.type, SignalingMessageType.webrtcAnswer);
+      expect(answer.payload['sdp'], 'answer-sdp');
+      expect(answer.to, 'publisher-1');
+    },
+  );
 
   test('remote ICE candidate is applied to the peer connection', () async {
     await service.handleSignal(
@@ -540,23 +555,26 @@ void main() {
     expect(factory.created.single.addedCandidates.single.candidate, 'cand');
   });
 
-  test('remote ICE candidates before the offer are buffered then flushed', () async {
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcIceCandidate,
-        payload: {'candidate': 'early', 'sdpMLineIndex': 0},
-      ),
-    );
+  test(
+    'remote ICE candidates before the offer are buffered then flushed',
+    () async {
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcIceCandidate,
+          payload: {'candidate': 'early', 'sdpMLineIndex': 0},
+        ),
+      );
 
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
-      ),
-    );
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
 
-    expect(factory.created.single.addedCandidates.single.candidate, 'early');
-  });
+      expect(factory.created.single.addedCandidates.single.candidate, 'early');
+    },
+  );
 
   test('local ICE candidate is emitted as an outbound signal', () async {
     final outbound = <OutboundSignal>[];
@@ -570,7 +588,11 @@ void main() {
       ),
     );
     factory.created.single.fireLocalCandidate(
-      const RtcIceCandidate(candidate: 'local-cand', sdpMid: '0', sdpMLineIndex: 0),
+      const RtcIceCandidate(
+        candidate: 'local-cand',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
     );
     await Future<void>.delayed(Duration.zero);
 
@@ -595,6 +617,28 @@ void main() {
     expect(audio.played.single.id, 'remote-1');
   });
 
+  test(
+    'audio output failure is logged without marking remote audio present',
+    () async {
+      final logged = <String>[];
+      setSonicLogSink((tag, message) => logged.add('$tag: $message'));
+      addTearDown(() => setSonicLogSink(null));
+      audio.playError = StateError('output blocked');
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
+
+      factory.created.single.fireRemoteStream(FakeRtcMediaStream('remote-1'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(service.statsValue.hasRemoteAudio, isFalse);
+      expect(logged, contains(contains('audio playback failed')));
+    },
+  );
+
   test('ICE connecting without media stops short of connected', () async {
     final states = <ListenerConnectionState>[];
     service.connectionState.listen(states.add);
@@ -612,44 +656,55 @@ void main() {
     // audio is arriving. Reporting Live here is what produced the worst symptom
     // of a half-recovered session: a viewer showing a healthy connection and a
     // running timer with silence coming out of the speaker.
-    expect(service.connectionStateValue, ListenerConnectionState.waitingForMedia);
+    expect(
+      service.connectionStateValue,
+      ListenerConnectionState.waitingForMedia,
+    );
     expect(states, isNot(contains(ListenerConnectionState.connected)));
     expect(service.statsValue.iceState, 'Connected');
     expect(service.statsValue.connectedAt, isNull);
   });
 
-  test('inbound audio actually arriving is what promotes the state to connected',
-      () async {
-    final states = <ListenerConnectionState>[];
-    service.connectionState.listen(states.add);
+  test(
+    'inbound audio actually arriving is what promotes the state to connected',
+    () async {
+      final states = <ListenerConnectionState>[];
+      service.connectionState.listen(states.add);
 
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
-      ),
-    );
-    final connection = factory.created.single;
-    connection.fireConnectionState(RtcConnectionState.connected);
-    await Future<void>.delayed(Duration.zero);
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
+      final connection = factory.created.single;
+      connection.fireConnectionState(RtcConnectionState.connected);
+      await Future<void>.delayed(Duration.zero);
 
-    connection.nextStats = const RtcConnectionStats(
-      inboundAudio: RtcInboundAudioStats(packetsReceived: 0, packetsLost: 0),
-    );
-    await service.refreshStats();
-    expect(service.connectionStateValue, ListenerConnectionState.waitingForMedia,
-        reason: 'a poll with no packets is not media flowing');
+      connection.nextStats = const RtcConnectionStats(
+        inboundAudio: RtcInboundAudioStats(packetsReceived: 0, packetsLost: 0),
+      );
+      await service.refreshStats();
+      expect(
+        service.connectionStateValue,
+        ListenerConnectionState.waitingForMedia,
+        reason: 'a poll with no packets is not media flowing',
+      );
 
-    connection.nextStats = const RtcConnectionStats(
-      inboundAudio: RtcInboundAudioStats(packetsReceived: 240, packetsLost: 0),
-    );
-    await service.refreshStats();
-    await Future<void>.delayed(Duration.zero);
+      connection.nextStats = const RtcConnectionStats(
+        inboundAudio: RtcInboundAudioStats(
+          packetsReceived: 240,
+          packetsLost: 0,
+        ),
+      );
+      await service.refreshStats();
+      await Future<void>.delayed(Duration.zero);
 
-    expect(service.connectionStateValue, ListenerConnectionState.connected);
-    expect(states, contains(ListenerConnectionState.connected));
-    expect(service.statsValue.connectedAt, isNotNull);
-  });
+      expect(service.connectionStateValue, ListenerConnectionState.connected);
+      expect(states, contains(ListenerConnectionState.connected));
+      expect(service.statsValue.connectedAt, isNotNull);
+    },
+  );
 
   test('a media path that drops clears the metrics it left behind', () async {
     await service.handleSignal(
@@ -677,25 +732,28 @@ void main() {
     expect(service.statsValue.connectedAt, isNull);
   });
 
-  test('session.ended tears down the peer connection and stops audio', () async {
-    final states = <ListenerConnectionState>[];
-    service.connectionState.listen(states.add);
+  test(
+    'session.ended tears down the peer connection and stops audio',
+    () async {
+      final states = <ListenerConnectionState>[];
+      service.connectionState.listen(states.add);
 
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
-      ),
-    );
-    final connection = factory.created.single;
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
+      final connection = factory.created.single;
 
-    await service.handleSignal(_message(SignalingMessageType.sessionEnded));
-    await Future<void>.delayed(Duration.zero);
+      await service.handleSignal(_message(SignalingMessageType.sessionEnded));
+      await Future<void>.delayed(Duration.zero);
 
-    expect(connection.disposed, isTrue);
-    expect(audio.stopCount, greaterThanOrEqualTo(1));
-    expect(states.last, ListenerConnectionState.ended);
-  });
+      expect(connection.disposed, isTrue);
+      expect(audio.stopCount, greaterThanOrEqualTo(1));
+      expect(states.last, ListenerConnectionState.ended);
+    },
+  );
 
   test('a transient WebRTC disconnect maps to reconnecting', () async {
     final states = <ListenerConnectionState>[];
@@ -707,9 +765,7 @@ void main() {
         payload: {'sdp': 'offer-sdp', 'type': 'offer'},
       ),
     );
-    factory.created.single.fireConnectionState(
-      RtcConnectionState.disconnected,
-    );
+    factory.created.single.fireConnectionState(RtcConnectionState.disconnected);
     await Future<void>.delayed(Duration.zero);
 
     expect(states, contains(ListenerConnectionState.reconnecting));
@@ -755,7 +811,10 @@ void main() {
 
     await service.refreshStats();
 
-    expect(logged.where((m) => m.contains('media path -> relay')), hasLength(1));
+    expect(
+      logged.where((m) => m.contains('media path -> relay')),
+      hasLength(1),
+    );
   });
 
   test('does not repeat the media-path log while it stays the same', () async {
@@ -781,125 +840,140 @@ void main() {
     );
   });
 
-  test('refreshStats derives interval loss/concealment/jitter-buffer metrics', () async {
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
-      ),
-    );
-    final connection = factory.created.single;
+  test(
+    'refreshStats derives interval loss/concealment/jitter-buffer metrics',
+    () async {
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
+      final connection = factory.created.single;
 
-    // First poll: counters since connection start count as the first interval.
-    connection.nextStats = const RtcConnectionStats(
-      inboundAudio: RtcInboundAudioStats(
-        packetsReceived: 900,
-        packetsLost: 100,
-        packetsDiscarded: 3,
-        fecPacketsReceived: 12,
-        concealedSamples: 4800,
-        concealmentEvents: 5,
-        totalSamplesReceived: 96000,
-        jitterBufferDelaySeconds: 48,
-        jitterBufferEmittedCount: 960,
-      ),
-    );
-    await service.refreshStats();
+      // First poll: counters since connection start count as the first interval.
+      connection.nextStats = const RtcConnectionStats(
+        inboundAudio: RtcInboundAudioStats(
+          packetsReceived: 900,
+          packetsLost: 100,
+          packetsDiscarded: 3,
+          fecPacketsReceived: 12,
+          concealedSamples: 4800,
+          concealmentEvents: 5,
+          totalSamplesReceived: 96000,
+          jitterBufferDelaySeconds: 48,
+          jitterBufferEmittedCount: 960,
+        ),
+      );
+      await service.refreshStats();
 
-    // 100 / (900 + 100) = 10 % loss; 4800 / 96000 = 5 % concealment;
-    // 48 s / 960 emits = 50 ms average jitter-buffer delay.
-    expect(service.statsValue.packetLossPercent, closeTo(10, 0.001));
-    expect(service.statsValue.concealmentPercent, closeTo(5, 0.001));
-    expect(service.statsValue.jitterBufferDelayMs, closeTo(50, 0.001));
-    expect(service.statsValue.packetsReceived, 900);
-    expect(service.statsValue.packetsLost, 100);
-    expect(service.statsValue.packetsDiscarded, 3);
-    expect(service.statsValue.fecPacketsReceived, 12);
-    expect(service.statsValue.concealmentEvents, 5);
+      // 100 / (900 + 100) = 10 % loss; 4800 / 96000 = 5 % concealment;
+      // 48 s / 960 emits = 50 ms average jitter-buffer delay.
+      expect(service.statsValue.packetLossPercent, closeTo(10, 0.001));
+      expect(service.statsValue.concealmentPercent, closeTo(5, 0.001));
+      expect(service.statsValue.jitterBufferDelayMs, closeTo(50, 0.001));
+      expect(service.statsValue.packetsReceived, 900);
+      expect(service.statsValue.packetsLost, 100);
+      expect(service.statsValue.packetsDiscarded, 3);
+      expect(service.statsValue.fecPacketsReceived, 12);
+      expect(service.statsValue.concealmentEvents, 5);
 
-    // Second poll: only the deltas count — 50 lost of 1050 new packets.
-    connection.nextStats = const RtcConnectionStats(
-      inboundAudio: RtcInboundAudioStats(
-        packetsReceived: 1900,
-        packetsLost: 150,
-        totalSamplesReceived: 192000,
-        concealedSamples: 4800,
-        jitterBufferDelaySeconds: 67.2,
-        jitterBufferEmittedCount: 1920,
-      ),
-    );
-    await service.refreshStats();
+      // Second poll: only the deltas count — 50 lost of 1050 new packets.
+      connection.nextStats = const RtcConnectionStats(
+        inboundAudio: RtcInboundAudioStats(
+          packetsReceived: 1900,
+          packetsLost: 150,
+          totalSamplesReceived: 192000,
+          concealedSamples: 4800,
+          jitterBufferDelaySeconds: 67.2,
+          jitterBufferEmittedCount: 1920,
+        ),
+      );
+      await service.refreshStats();
 
-    expect(
-      service.statsValue.packetLossPercent,
-      closeTo(50 / 1050 * 100, 0.001),
-    );
-    // No new concealed samples in the interval.
-    expect(service.statsValue.concealmentPercent, closeTo(0, 0.001));
-    // 19.2 s over 960 new emits = 20 ms.
-    expect(service.statsValue.jitterBufferDelayMs, closeTo(20, 0.001));
-    expect(service.statsValue.packetsLost, 150);
-  });
+      expect(
+        service.statsValue.packetLossPercent,
+        closeTo(50 / 1050 * 100, 0.001),
+      );
+      // No new concealed samples in the interval.
+      expect(service.statsValue.concealmentPercent, closeTo(0, 0.001));
+      // 19.2 s over 960 new emits = 20 ms.
+      expect(service.statsValue.jitterBufferDelayMs, closeTo(20, 0.001));
+      expect(service.statsValue.packetsLost, 150);
+    },
+  );
 
-  test('interval metrics stay null without traffic and survive missing counters', () async {
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
-      ),
-    );
-    final connection = factory.created.single;
-    connection.nextStats = const RtcConnectionStats(
-      rttMs: 42,
-      inboundAudio: RtcInboundAudioStats(packetsReceived: 0, packetsLost: 0),
-    );
+  test(
+    'interval metrics stay null without traffic and survive missing counters',
+    () async {
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
+      final connection = factory.created.single;
+      connection.nextStats = const RtcConnectionStats(
+        rttMs: 42,
+        inboundAudio: RtcInboundAudioStats(packetsReceived: 0, packetsLost: 0),
+      );
 
-    await service.refreshStats();
+      await service.refreshStats();
 
-    expect(service.statsValue.rttMs, 42);
-    expect(service.statsValue.packetLossPercent, isNull);
-    expect(service.statsValue.concealmentPercent, isNull);
-    expect(service.statsValue.jitterBufferDelayMs, isNull);
-  });
+      expect(service.statsValue.rttMs, 42);
+      expect(service.statsValue.packetLossPercent, isNull);
+      expect(service.statsValue.concealmentPercent, isNull);
+      expect(service.statsValue.jitterBufferDelayMs, isNull);
+    },
+  );
 
-  test('leave disposes the peer connection, stops audio, and clears metrics', () async {
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
-      ),
-    );
-    final connection = factory.created.single;
-    connection.nextStats = const RtcConnectionStats(rttMs: 42);
-    await service.refreshStats();
+  test(
+    'leave disposes the peer connection, stops audio, and clears metrics',
+    () async {
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+        ),
+      );
+      final connection = factory.created.single;
+      connection.nextStats = const RtcConnectionStats(rttMs: 42);
+      await service.refreshStats();
 
-    await service.leave();
+      await service.leave();
 
-    expect(connection.disposed, isTrue);
-    expect(audio.stopCount, greaterThanOrEqualTo(1));
-    expect(service.connectionStateValue, ListenerConnectionState.disconnected);
-    expect(service.statsValue.rttMs, isNull);
-    expect(service.statsValue.transport, RtcTransportMode.unknown);
-  });
+      expect(connection.disposed, isTrue);
+      expect(audio.stopCount, greaterThanOrEqualTo(1));
+      expect(
+        service.connectionStateValue,
+        ListenerConnectionState.disconnected,
+      );
+      expect(service.statsValue.rttMs, isNull);
+      expect(service.statsValue.transport, RtcTransportMode.unknown);
+    },
+  );
 
-  test('a second offer renegotiates by disposing the previous connection', () async {
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-1', 'type': 'offer'},
-      ),
-    );
-    await service.handleSignal(
-      _message(
-        SignalingMessageType.webrtcOffer,
-        payload: {'sdp': 'offer-2', 'type': 'offer'},
-      ),
-    );
+  test(
+    'a second offer renegotiates by disposing the previous connection',
+    () async {
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-1', 'type': 'offer'},
+        ),
+      );
+      await service.handleSignal(
+        _message(
+          SignalingMessageType.webrtcOffer,
+          payload: {'sdp': 'offer-2', 'type': 'offer'},
+        ),
+      );
 
-    expect(factory.created, hasLength(2));
-    expect(factory.created.first.disposed, isTrue);
-    expect(factory.created.last.remoteDescription?.sdp, 'offer-2');
-  });
+      expect(factory.created, hasLength(2));
+      expect(factory.created.first.disposed, isTrue);
+      expect(factory.created.last.remoteDescription?.sdp, 'offer-2');
+    },
+  );
 
   test(
     'a failed ICE connection asks the known publisher to re-offer instead of dying',
@@ -970,7 +1044,10 @@ void main() {
       connection.fireConnectionState(RtcConnectionState.closed);
       await Future<void>.delayed(Duration.zero);
 
-      expect(service.connectionStateValue, ListenerConnectionState.reconnecting);
+      expect(
+        service.connectionStateValue,
+        ListenerConnectionState.reconnecting,
+      );
       expect(states, isNot(contains(ListenerConnectionState.disconnected)));
     },
   );

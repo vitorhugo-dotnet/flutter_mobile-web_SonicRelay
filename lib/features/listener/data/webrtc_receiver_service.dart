@@ -131,7 +131,10 @@ class WebRtcReceiverService {
         // authenticated `from` and reply `viewer.ready` to it so the publisher
         // creates its peer connection and sends the offer. `viewer.ready` is a
         // routed message and the backend rejects it without a `to` recipient.
-        sonicLog('WebRTC', 'publisher.ready from=${message.from} -> viewer.ready');
+        sonicLog(
+          'WebRTC',
+          'publisher.ready from=${message.from} -> viewer.ready',
+        );
         _publisherId = message.from;
         if (message.from != null) {
           _announceReady(message.from!, 'publisher.ready');
@@ -315,8 +318,12 @@ class WebRtcReceiverService {
 
   Future<void> _handleRemoteStream(RtcMediaStream stream) async {
     sonicLog('WebRTC', 'remote audio stream received -> playing');
-    await _audioReceiver.play(stream);
-    _setStats(_stats.copyWith(hasRemoteAudio: true));
+    try {
+      await _audioReceiver.play(stream);
+      _setStats(_stats.copyWith(hasRemoteAudio: true));
+    } catch (error, stack) {
+      sonicLog('Audio', 'audio playback failed: $error\n$stack');
+    }
   }
 
   void _handleConnectionState(RtcConnectionState state) {
@@ -364,7 +371,10 @@ class WebRtcReceiverService {
           // stream): drop the dead peer connection and ask the publisher to
           // re-offer. The publisher answers with a fresh webrtc.offer, which
           // builds a brand-new peer connection in _handleOffer.
-          sonicLog('WebRTC', 'ice failed -> requesting re-offer from=$publisher');
+          sonicLog(
+            'WebRTC',
+            'ice failed -> requesting re-offer from=$publisher',
+          );
           _setStats(_stats.copyWith(iceState: 'Reconnecting'));
           _setState(ListenerConnectionState.reconnecting);
           unawaited(_disposePeerConnection());
@@ -433,7 +443,9 @@ class WebRtcReceiverService {
         ),
         scale: 1000,
       );
-      _promoteOnMediaFlow(_delta(previous?.packetsReceived, inbound.packetsReceived));
+      _promoteOnMediaFlow(
+        _delta(previous?.packetsReceived, inbound.packetsReceived),
+      );
       _previousInboundAudio = inbound;
     }
 
