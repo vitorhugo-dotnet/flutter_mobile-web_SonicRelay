@@ -1,7 +1,7 @@
 <en-US>
-- Improved QR pairing reliability and retry behavior when a scanned code is rejected. 📷
+- Fixed silent Web listening by attaching remote WebRTC streams to the browser audio output. 🔊
 </en-US>
 
 <pt-BR>
-- Melhoramos a confiabilidade do pareamento por QR Code e as tentativas quando um código escaneado é rejeitado. 📷
+- Corrigimos a reprodução silenciosa no Web conectando os streams WebRTC remotos à saída de áudio do navegador. 🔊
 </pt-BR>

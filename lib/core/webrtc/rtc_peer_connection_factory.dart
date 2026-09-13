@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 
 import '../diagnostics/sonic_log.dart';
@@ -187,6 +188,16 @@ abstract class RtcMediaStream {
   String get id;
 
   Future<void> setAudioEnabled(bool enabled);
+
+  /// Connects this stream to the platform audio output.
+  ///
+  /// Native WebRTC renders enabled remote audio tracks automatically. Web
+  /// browsers require the stream to be assigned to an HTML media element,
+  /// which flutter_webrtc creates through an RTCVideoRenderer.
+  Future<void> attachAudioOutput();
+
+  /// Disconnects and releases the platform audio output, if one is needed.
+  Future<void> detachAudioOutput();
 }
 
 /// The subset of a WebRTC peer connection the receiver needs. Abstracted so
@@ -305,8 +316,8 @@ class FlutterWebRtcPeerConnectionFactory implements RtcPeerConnectionFactory {
         );
         await webrtc.WebRTC.initialize(
           options: {
-            'androidAudioConfiguration':
-                concurrentPlaybackAudioConfiguration.toMap(),
+            'androidAudioConfiguration': concurrentPlaybackAudioConfiguration
+                .toMap(),
           },
         );
         _nativeAudioInitialized = true;
@@ -352,6 +363,7 @@ class _FlutterWebRtcMediaStream implements RtcMediaStream {
   _FlutterWebRtcMediaStream(this._stream);
 
   final webrtc.MediaStream _stream;
+  webrtc.RTCVideoRenderer? _audioRenderer;
 
   @override
   String get id => _stream.id;
@@ -360,6 +372,50 @@ class _FlutterWebRtcMediaStream implements RtcMediaStream {
   Future<void> setAudioEnabled(bool enabled) async {
     for (final track in _stream.getAudioTracks()) {
       track.enabled = enabled;
+    }
+  }
+
+  @override
+  Future<void> attachAudioOutput() async {
+    if (!kIsWeb || _audioRenderer != null) return;
+
+    final renderer = webrtc.RTCVideoRenderer();
+    try {
+      await renderer.initialize();
+      renderer.srcObject = _stream;
+      _audioRenderer = renderer;
+      sonicLog('Audio', 'web audio output attached to remote stream');
+    } catch (error, stack) {
+      sonicLog('Audio', 'failed to attach web audio output: $error');
+      try {
+        await renderer.dispose();
+      } catch (cleanupError) {
+        sonicLog(
+          'Audio',
+          'failed to clean up web audio output after attach error: '
+              '$cleanupError',
+        );
+      }
+      Error.throwWithStackTrace(error, stack);
+    }
+  }
+
+  @override
+  Future<void> detachAudioOutput() async {
+    final renderer = _audioRenderer;
+    if (renderer == null) return;
+    try {
+      renderer.srcObject = null;
+    } catch (error) {
+      sonicLog('Audio', 'failed to clear web audio output stream: $error');
+    }
+    try {
+      await renderer.dispose();
+      sonicLog('Audio', 'web audio output detached');
+    } catch (error) {
+      sonicLog('Audio', 'failed to dispose web audio output: $error');
+    } finally {
+      _audioRenderer = null;
     }
   }
 }
@@ -483,9 +539,7 @@ class _FlutterWebRtcPeerConnection implements RtcPeerConnection {
               concealedSamples: _asInt(values['concealedSamples']),
               concealmentEvents: _asInt(values['concealmentEvents']),
               totalSamplesReceived: _asInt(values['totalSamplesReceived']),
-              jitterBufferDelaySeconds: _asDouble(
-                values['jitterBufferDelay'],
-              ),
+              jitterBufferDelaySeconds: _asDouble(values['jitterBufferDelay']),
               jitterBufferTargetDelaySeconds: _asDouble(
                 values['jitterBufferTargetDelay'],
               ),
@@ -550,20 +604,19 @@ class _FlutterWebRtcPeerConnection implements RtcPeerConnection {
     await _connection.dispose();
   }
 
-  RtcConnectionState _mapConnectionState(
-    webrtc.RTCPeerConnectionState state,
-  ) => switch (state) {
-    webrtc.RTCPeerConnectionState.RTCPeerConnectionStateNew =>
-      RtcConnectionState.idle,
-    webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnecting =>
-      RtcConnectionState.connecting,
-    webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected =>
-      RtcConnectionState.connected,
-    webrtc.RTCPeerConnectionState.RTCPeerConnectionStateDisconnected =>
-      RtcConnectionState.disconnected,
-    webrtc.RTCPeerConnectionState.RTCPeerConnectionStateFailed =>
-      RtcConnectionState.failed,
-    webrtc.RTCPeerConnectionState.RTCPeerConnectionStateClosed =>
-      RtcConnectionState.closed,
-  };
+  RtcConnectionState _mapConnectionState(webrtc.RTCPeerConnectionState state) =>
+      switch (state) {
+        webrtc.RTCPeerConnectionState.RTCPeerConnectionStateNew =>
+          RtcConnectionState.idle,
+        webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnecting =>
+          RtcConnectionState.connecting,
+        webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected =>
+          RtcConnectionState.connected,
+        webrtc.RTCPeerConnectionState.RTCPeerConnectionStateDisconnected =>
+          RtcConnectionState.disconnected,
+        webrtc.RTCPeerConnectionState.RTCPeerConnectionStateFailed =>
+          RtcConnectionState.failed,
+        webrtc.RTCPeerConnectionState.RTCPeerConnectionStateClosed =>
+          RtcConnectionState.closed,
+      };
 }
