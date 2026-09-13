@@ -149,7 +149,16 @@ class WebRtcReceiverService {
       case SignalingMessageType.sessionEnded:
         await _teardown(ListenerConnectionState.ended);
       case SignalingMessageType.sessionLeft:
-        await _teardown(ListenerConnectionState.disconnected);
+        // Public rooms contain multiple viewers. A session.left emitted for
+        // one of them must not tear down every other viewer's publisher path.
+        if (message.from == null || message.from == _publisherId) {
+          await _teardown(ListenerConnectionState.disconnected);
+        } else {
+          sonicLog(
+            'WebRTC',
+            'ignoring session.left from unrelated participant=${message.from}',
+          );
+        }
       case SignalingMessageType.participantReconnected:
         // The publisher's signaling socket reconnected within the backend's
         // grace period. We're the answerer and cannot restart ICE ourselves,
@@ -321,6 +330,7 @@ class WebRtcReceiverService {
     try {
       await _audioReceiver.play(stream);
       _setStats(_stats.copyWith(hasRemoteAudio: true));
+      _promoteOnMediaFlow(mediaObserved: true);
     } catch (error, stack) {
       sonicLog('Audio', 'audio playback failed: $error\n$stack');
     }
@@ -335,10 +345,11 @@ class WebRtcReceiverService {
         _setState(ListenerConnectionState.connecting);
       case RtcConnectionState.connected:
         // Deliberately not `connected` yet: ICE only proves the peers can reach
-        // each other. `refreshStats` promotes this once inbound RTP actually
-        // advances — see [_promoteOnMediaFlow].
+        // each other. A playable remote stream or advancing inbound RTP
+        // promotes the listener — see [_promoteOnMediaFlow].
         _setStats(_stats.copyWith(iceState: 'Connected'));
         _setState(ListenerConnectionState.waitingForMedia);
+        _promoteOnMediaFlow(mediaObserved: _stats.hasRemoteAudio);
         _startStatsPolling();
       case RtcConnectionState.disconnected:
         // Transient ICE loss: keep the peer connection alive, it may recover.
@@ -444,7 +455,9 @@ class WebRtcReceiverService {
         scale: 1000,
       );
       _promoteOnMediaFlow(
-        _delta(previous?.packetsReceived, inbound.packetsReceived),
+        mediaObserved:
+            (_delta(previous?.packetsReceived, inbound.packetsReceived) ?? 0) >
+            0,
       );
       _previousInboundAudio = inbound;
     }
@@ -484,18 +497,16 @@ class WebRtcReceiverService {
   }
 
   /// Promotes [ListenerConnectionState.waitingForMedia] to
-  /// [ListenerConnectionState.connected] once inbound RTP has actually advanced
-  /// over a stats interval.
+  /// [ListenerConnectionState.connected] once playable remote audio is present
+  /// or inbound RTP has advanced over a stats interval.
   ///
-  /// This is the only path to `connected`, and it is what makes the UI's `Live`
-  /// mean what it says. An ICE connection recovers well before — sometimes long
-  /// before — the publisher resumes sending, and a recovery that stalls in
-  /// between used to be indistinguishable from a healthy one: connected badge,
-  /// running timer, silence. `connectedAt` is stamped here too, so the session
-  /// timer counts audio rather than negotiation.
-  void _promoteOnMediaFlow(double? packetsReceivedDelta) {
+  /// The remote-stream callback proves the browser has a playable output even
+  /// when getStats is unavailable. Packet deltas remain a second, independent
+  /// signal on platforms that report them. `connectedAt` is stamped here too,
+  /// so the session timer counts audio rather than negotiation.
+  void _promoteOnMediaFlow({required bool mediaObserved}) {
     if (_state != ListenerConnectionState.waitingForMedia) return;
-    if (packetsReceivedDelta == null || packetsReceivedDelta <= 0) return;
+    if (!mediaObserved) return;
     sonicLog('WebRTC', 'inbound audio flowing -> connected');
     _setStats(_stats.copyWith(connectedAt: DateTime.now()));
     _setState(ListenerConnectionState.connected);

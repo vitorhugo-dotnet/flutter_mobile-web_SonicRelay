@@ -1,7 +1,7 @@
 <en-US>
-- Fixed silent Web listening by attaching remote WebRTC streams to the browser audio output. 🔊
+- Fixed Web connection and quality indicators, and prevented other listeners leaving a public room from stopping your audio. 📻
 </en-US>
 
 <pt-BR>
-- Corrigimos a reprodução silenciosa no Web conectando os streams WebRTC remotos à saída de áudio do navegador. 🔊
+- Corrigimos os indicadores de conexão e qualidade no Web e evitamos que a saída de outros ouvintes de uma sala pública interrompa seu áudio. 📻
 </pt-BR>

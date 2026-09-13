@@ -303,9 +303,11 @@ class FlutterWebRtcPeerConnectionFactory implements RtcPeerConnectionFactory {
   ///    be abandoned on teardown, so connecting or disconnecting never
   ///    pauses, resumes, or ducks another app's playback (issue #19).
   ///
-  /// Both calls are Android-only no-ops elsewhere, so this is safe to call
-  /// unconditionally.
+  /// Browser builds return before touching the native Helper APIs, which use
+  /// dart:io Platform internally.
   Future<void> _configureMediaPlaybackAudio() async {
+    if (kIsWeb) return;
+
     try {
       if (!_nativeAudioInitialized && webrtc.WebRTC.platformIsAndroid) {
         sonicLog(
@@ -588,7 +590,11 @@ class _FlutterWebRtcPeerConnection implements RtcPeerConnection {
         candidatePair: candidatePair,
         inboundAudio: inboundAudio,
       );
-    } catch (_) {
+    } catch (error, stack) {
+      sonicLog(
+        'WebRTC',
+        'failed to collect peer connection stats: $error\n$stack',
+      );
       return null;
     }
   }

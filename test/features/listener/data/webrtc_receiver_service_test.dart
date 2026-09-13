@@ -380,6 +380,26 @@ void main() {
   });
 
   test(
+    'session.left from another viewer does not tear down the publisher',
+    () async {
+      await service.handleSignal(
+        _message(SignalingMessageType.publisherReady, from: 'publisher-1'),
+      );
+
+      await service.handleSignal(
+        _message(SignalingMessageType.sessionLeft, from: 'another-viewer'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        service.connectionStateValue,
+        ListenerConnectionState.waitingForOffer,
+      );
+      expect(audio.stopCount, 0);
+    },
+  );
+
+  test(
     'participant.reconnected before any publisher is known is ignored',
     () async {
       final outbound = <OutboundSignal>[];
@@ -615,6 +635,45 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(audio.played.single.id, 'remote-1');
+  });
+
+  test('playing a remote stream promotes connected ICE to listening', () async {
+    final states = <ListenerConnectionState>[];
+    service.connectionState.listen(states.add);
+    await service.handleSignal(
+      _message(
+        SignalingMessageType.webrtcOffer,
+        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+      ),
+    );
+    final connection = factory.created.single;
+    connection.fireConnectionState(RtcConnectionState.connected);
+    await Future<void>.delayed(Duration.zero);
+
+    connection.fireRemoteStream(FakeRtcMediaStream('remote-1'));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(service.connectionStateValue, ListenerConnectionState.connected);
+    expect(service.statsValue.connectedAt, isNotNull);
+    expect(states, contains(ListenerConnectionState.connected));
+  });
+
+  test('connected ICE promotes a remote stream that arrived first', () async {
+    await service.handleSignal(
+      _message(
+        SignalingMessageType.webrtcOffer,
+        payload: {'sdp': 'offer-sdp', 'type': 'offer'},
+      ),
+    );
+    final connection = factory.created.single;
+    connection.fireRemoteStream(FakeRtcMediaStream('remote-1'));
+    await Future<void>.delayed(Duration.zero);
+
+    connection.fireConnectionState(RtcConnectionState.connected);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(service.connectionStateValue, ListenerConnectionState.connected);
+    expect(service.statsValue.connectedAt, isNotNull);
   });
 
   test(

@@ -12,7 +12,7 @@ enum ListenerConnectionState {
   /// ICE is establishing the media path.
   connecting,
 
-  /// ICE reached `connected`, but no inbound audio has been observed yet.
+  /// ICE reached `connected`, but no playable remote audio has been observed.
   ///
   /// A negotiated ICE path proves the peers can reach each other, not that audio
   /// is arriving. Treating the two as the same thing is what produced the worst
