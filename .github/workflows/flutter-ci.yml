@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  deployments: write
 
 concurrency:
   group: ci-cd-${{ github.ref }}
@@ -284,6 +285,12 @@ jobs:
     needs: [version, checks, build-web]
     if: needs.version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    environment:
+      name: Cloudflare Pages
+      url: https://sonic.hugodotnet.dev
+    permissions:
+      contents: read
+      deployments: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -300,6 +307,12 @@ jobs:
           wranglerVersion: "4"
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: deploy
+
+      - name: Health check
+        run: |
+          curl --fail --show-error --silent --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 --max-time 30 https://sonic.hugodotnet.dev/
 
   release:
     name: Persist version and publish GitHub Release
