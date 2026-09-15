@@ -286,7 +286,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: Cloudflare Pages
-      url: https://sonic.hugodotnet.dev
+      url: https://sonicrelay.hugodotnet.dev
     permissions:
       contents: read
       deployments: write
@@ -311,7 +311,7 @@ jobs:
 
       - name: Health check
         run: |
-          curl --fail --show-error --silent --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 --max-time 30 https://sonic.hugodotnet.dev/
+          curl --fail --show-error --silent --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 --max-time 30 https://sonicrelay.hugodotnet.dev/
 
   release:
     name: Persist version and publish GitHub Release
