@@ -200,13 +200,6 @@ jobs:
             --build-name "${{ needs.version.outputs.version_name }}" \
             --build-number "${{ needs.version.outputs.version_code }}"
 
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sonic-relay-web
-          path: build/web
-          if-no-files-found: error
-
       - name: Build release AAB
         run: |
           flutter build appbundle \
@@ -279,6 +272,12 @@ jobs:
             --base-href / \
             --build-name "${{ needs.version.outputs.version_name }}" \
             --build-number "${{ needs.version.outputs.version_code }}"
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonic-relay-web
+          path: build/web
+          if-no-files-found: error
 
   deploy-web:
     name: Deploy web to Cloudflare Workers
