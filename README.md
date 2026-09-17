@@ -1,11 +1,12 @@
 # SonicRelay Flutter Viewer
 
-Mobile viewer for the low-latency SonicRelay audio streaming suite. It targets
+Mobile viewer for **SonicRelay**, the low-latency system-audio streaming product. It targets
 Android and iOS only; the web and desktop runners were removed rather than left
 unmaintained.
 
-- [Backend](https://github.com/vitorhugo-java/dotnet_SonicRelay)
-- [Windows publisher](https://github.com/vitorhugo-java/windows_SonicRelay)
+- [RelayControl backend/control plane](https://github.com/vitorhugo-dotnet/dotnet_SonicRelay)
+- [SonicRelay Desktop publisher](https://github.com/vitorhugo-dotnet/desktop_dotnet_SonicRelay)
+- [FrameRelay screen sharing](https://github.com/vitorhugo-dotnet/dotnet_SonicDesktopRelay) — separate product using the same RelayControl infrastructure
 
 Integration docs:
 
@@ -21,7 +22,7 @@ The app uses Feature Driven Development:
 - `lib/core`: reusable technical infrastructure such as HTTP, secure storage, WebSocket, and WebRTC adapters.
 - `lib/features`: user-facing capabilities. Each feature owns its `data`, `domain`, and `presentation` boundaries when applicable.
 
-Riverpod provides state and dependency composition, go_router handles guarded navigation, and Dio provides HTTP infrastructure. A single `DeviceIdentitySession` supplies short-lived device bearer tokens to HTTP and signaling consumers. The long-lived device credential is stored only through `flutter_secure_storage`; it is never written to SharedPreferences or logs. The viewer receives audio over WebRTC (`flutter_webrtc`); the backend only handles device identity, pairing, sessions, and signaling and is never a media relay.
+Riverpod provides state and dependency composition, go_router handles guarded navigation, and Dio provides HTTP infrastructure. A single `DeviceIdentitySession` supplies short-lived device bearer tokens to HTTP and signaling consumers. The long-lived device credential is stored only through `flutter_secure_storage`; it is never written to SharedPreferences or logs. The viewer receives audio over WebRTC (`flutter_webrtc`); RelayControl only handles device identity, pairing, sessions, authorization and signaling and is never a media relay.
 
 ## Local development
 
